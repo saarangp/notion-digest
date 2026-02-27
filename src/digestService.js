@@ -481,15 +481,14 @@ function buildDigestText({
 }) {
   const lines = [];
   const addLine = makeAddLine(lines, config.maxSlackLines);
-  const dateLabel = formatDateDisplay(todayIso);
+  const dateLabel = todayIso;
 
-  addLine(`DAILY DIGEST | ${dateLabel}`);
+  addLine(`${mode === MODE_EVENING ? "Evening Sweep" : "Daily Digest"} | ${dateLabel}`);
   if (mode === MODE_EVENING) {
-    addLine("MODE | EVENING SWEEP");
     if (eveningProgress) {
-      addLine(
-        `PROGRESS | done ${eveningProgress.completedToday} | pending today ${eveningProgress.pendingDueToday}`,
-      );
+      addLine("Progress");
+      addLine(`Done today: ${eveningProgress.completedToday}`);
+      addLine(`Pending due today: ${eveningProgress.pendingDueToday}`);
     }
   }
 
@@ -499,21 +498,21 @@ function buildDigestText({
 
   addTaskSection({
     addLine,
-    title: "OVERDUE",
+    title: "Overdue",
     tasks: overdue,
     todayIso,
   });
 
   addTaskSection({
     addLine,
-    title: "DUE TODAY",
+    title: "Due Today",
     tasks: dueToday,
     todayIso,
   });
 
   addTaskSection({
     addLine,
-    title: "DUE SOON",
+    title: "Due Soon",
     tasks: dueSoon,
     todayIso,
   });
@@ -526,17 +525,20 @@ function buildDigestText({
   }
 
   if (capacity.available) {
-    addLine("CAPACITY");
-    addLine(`Free ${formatMinutes(capacity.freeMinutes)} | Planned ${formatMinutes(capacity.requiredMinutes)}`);
-    addLine(`Status ${capacity.status === "balanced_day" ? "BALANCED" : "CONSTRAINED"}`);
+    addLine("Capacity");
+    addLine(`Free: ${formatMinutes(capacity.freeMinutes)}`);
+    addLine(`Planned: ${formatMinutes(capacity.requiredMinutes)}`);
+    addLine(`Status: ${capacity.status === "balanced_day" ? "BALANCED" : "CONSTRAINED"}`);
   }
 
   if (suggestedDefer) {
-    addLine(`DEFER CANDIDATE | ${formatTaskCompact(suggestedDefer, todayIso)}`);
+    addLine("Defer Candidate");
+    addLine(formatTaskCompact(suggestedDefer, todayIso));
   }
 
   if (aiSummary) {
-    addLine(`AI NOTE | ${aiSummary}`);
+    addLine("AI Note");
+    addLine(aiSummary);
   }
 
   return lines.join("\n");
@@ -576,8 +578,7 @@ function formatTaskCompact(task, todayIso) {
   const title = truncate(task.title, 54);
   const project = truncate(task.project, 18);
   const due = duePhrase(dateDiffDays(todayIso, task.dueIso));
-  const estimate = formatMinutes(task.estimatedMinutes);
-  return `${priority} ${title} | ${project} | ${due} | ${estimate}`;
+  return `${priority} ${title} | ${project} | ${due}`;
 }
 
 function normalizePriorityTag(priority) {

@@ -123,7 +123,7 @@ async function handleCommand(interaction, stateStore) {
     await interaction.deferReply();
     const digest = await computeDigest(MODE_MORNING);
     await interaction.editReply({
-      embeds: [buildDigestEmbed(digest, "Anytime Digest")],
+      embeds: [buildDigestEmbed(digest, "Daily Digest")],
     });
     return;
   }
@@ -337,16 +337,18 @@ async function handleModalSubmit(interaction, stateStore) {
 async function replyWithTaskSelect(interaction, action) {
   const digest = await computeDigest(MODE_EVENING);
   const tasks = pickActionableTasks(digest.ranked);
+  const shouldDefer = !interaction.deferred && !interaction.replied;
+
+  if (shouldDefer) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
+
   if (tasks.length === 0) {
-    await interaction.reply({
-      content: "No actionable evening tasks found.",
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.editReply({ content: "No actionable evening tasks found.", components: [] });
     return;
   }
-  await interaction.reply({
+  await interaction.editReply({
     content: `Select a task to ${action}.`,
-    flags: MessageFlags.Ephemeral,
     components: [buildTaskSelectRow(tasks, action)],
   });
 }
