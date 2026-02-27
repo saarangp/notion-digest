@@ -4,7 +4,7 @@ const {
   createPendingAction,
   buildNotionUpdateForAction,
 } = require("./botActions");
-const { config, MODE_EVENING } = require("./config");
+const { config, MODE_MORNING, MODE_EVENING, BUCKETS } = require("./config");
 const { notion, mapPageToTask, computeDigest, truncate } = require("./digestService");
 const { log } = require("./logger");
 
@@ -12,8 +12,10 @@ let ActionRowBuilder;
 let ButtonBuilder;
 let ButtonStyle;
 let DiscordClient;
+let EmbedBuilder;
 let Events;
 let GatewayIntentBits;
+let MessageFlags;
 let ModalBuilder;
 let REST;
 let Routes;
@@ -34,8 +36,10 @@ async function runDiscordBot() {
     ButtonBuilder,
     ButtonStyle,
     Client: DiscordClient,
+    EmbedBuilder,
     Events,
     GatewayIntentBits,
+    MessageFlags,
     ModalBuilder,
     REST,
     Routes,
@@ -47,6 +51,7 @@ async function runDiscordBot() {
   const stateStore = new BotStateStore(config.discordBotStatePath);
   const commands = [
     { name: "evening", description: "Show evening digest with quick actions." },
+    { name: "digest", description: "Show digest anytime." },
     { name: "reschedule", description: "Reschedule a selected task." },
     { name: "defer", description: "Defer a selected task by days." },
     { name: "done", description: "Mark a selected task done." },
@@ -94,24 +99,40 @@ async function handleInteraction(interaction, stateStore) {
     }
   } catch (error) {
     log(`Discord interaction error: ${error.stack || error.message}`);
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-      await interaction.reply({
+    if (!interaction.isRepliable()) return;
+
+    try {
+      const payload = {
         content: "Action failed. Check logs and try again.",
-        ephemeral: true,
-      });
+        flags: MessageFlags.Ephemeral,
+      };
+
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp(payload);
+      } else {
+        await interaction.reply(payload);
+      }
+    } catch (replyError) {
+      log(`Failed to send interaction error response: ${replyError.stack || replyError.message}`);
     }
   }
 }
 
 async function handleCommand(interaction, stateStore) {
+  if (interaction.commandName === "digest") {
+    await interaction.deferReply();
+    const digest = await computeDigest(MODE_MORNING);
+    await interaction.editReply({
+      embeds: [buildDigestEmbed(digest, "Anytime Digest")],
+    });
+    return;
+  }
+
   if (interaction.commandName === "evening") {
+    await interaction.deferReply();
     const digest = await computeDigest(MODE_EVENING);
-    const summary = truncate(
-      `${digest.text}\n\nChoose an action below to update Notion safely.`,
-      1900,
-    );
-    await interaction.reply({
-      content: summary,
+    await interaction.editReply({
+      embeds: [buildDigestEmbed(digest, "Evening Sweep")],
       components: [buildActionButtonsRow()],
     });
     return;
@@ -129,7 +150,7 @@ async function handleButton(interaction, stateStore) {
   if (customId === "evening:sweep") {
     await interaction.reply({
       content: "Sweep confirmed. No Notion changes were made.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -153,14 +174,14 @@ async function handleConfirmOrCancel(interaction, stateStore, customId) {
   if (!pending) {
     await interaction.reply({
       content: "This action is no longer pending. Please run /evening again.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
   if (pending.userId !== interaction.user.id) {
     await interaction.reply({
       content: "Only the user who initiated this action can confirm it.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -168,7 +189,7 @@ async function handleConfirmOrCancel(interaction, stateStore, customId) {
     await stateStore.deletePending(pending.id);
     await interaction.reply({
       content: "This confirmation has expired. Please start over.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -177,7 +198,7 @@ async function handleConfirmOrCancel(interaction, stateStore, customId) {
     await stateStore.deletePending(pending.id);
     await interaction.reply({
       content: "Canceled. No Notion changes were made.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -203,7 +224,7 @@ async function handleConfirmOrCancel(interaction, stateStore, customId) {
   await stateStore.deletePending(pending.id);
   await interaction.reply({
     content: `${update.summary}${config.dryRun ? " (DRY_RUN)" : ""}`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -291,7 +312,7 @@ async function handleModalSubmit(interaction, stateStore) {
     if (!isIsoDate(targetDate)) {
       await interaction.reply({
         content: "Invalid date format. Use YYYY-MM-DD.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -306,7 +327,7 @@ async function handleModalSubmit(interaction, stateStore) {
     await stateStore.putPending(pending);
     await interaction.reply({
       content: `Confirm rescheduling to ${targetDate}?`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
       components: [buildConfirmButtonsRow(pending.id)],
     });
     return;
@@ -319,13 +340,13 @@ async function replyWithTaskSelect(interaction, action) {
   if (tasks.length === 0) {
     await interaction.reply({
       content: "No actionable evening tasks found.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
   await interaction.reply({
     content: `Select a task to ${action}.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
     components: [buildTaskSelectRow(tasks, action)],
   });
 }
@@ -336,7 +357,7 @@ function pickActionableTasks(ranked) {
 
 function buildActionButtonsRow() {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("evening:sweep").setLabel("Sweep").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("evening:sweep").setLabel("Do Nothing").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("evening:reschedule").setLabel("Reschedule").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("evening:defer").setLabel("Defer").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("evening:done").setLabel("Mark Done").setStyle(ButtonStyle.Success),
@@ -362,6 +383,117 @@ function buildTaskSelectRow(tasks, action) {
       .setPlaceholder("Choose task")
       .addOptions(options),
   );
+}
+
+function buildDigestEmbed(digest, titlePrefix) {
+  const overdue = digest.ranked.filter((task) => task.bucket === BUCKETS.OVERDUE);
+  const dueToday = digest.ranked.filter((task) => task.bucket === BUCKETS.DUE_TODAY);
+  const dueSoon = digest.ranked.filter((task) => task.bucket === BUCKETS.DUE_SOON);
+
+  const fields = [];
+  if (digest.eveningProgress) {
+    fields.push({
+      name: "Progress",
+      value: `Done today: ${digest.eveningProgress.completedToday}\nPending due today: ${digest.eveningProgress.pendingDueToday}`,
+      inline: true,
+    });
+  }
+
+  if (digest.capacity.available) {
+    fields.push({
+      name: "Capacity",
+      value: `Free: ${formatMinutes(digest.capacity.freeMinutes)}\nPlanned: ${formatMinutes(digest.capacity.requiredMinutes)}\nStatus: ${digest.capacity.status === "balanced_day" ? "BALANCED" : "CONSTRAINED"}`,
+      inline: true,
+    });
+  }
+
+  if (overdue.length > 0) {
+    fields.push({
+      name: `Overdue (${overdue.length})`,
+      value: formatTaskListForEmbed(overdue),
+      inline: false,
+    });
+  }
+
+  if (dueToday.length > 0) {
+    fields.push({
+      name: `Due Today (${dueToday.length})`,
+      value: formatTaskListForEmbed(dueToday),
+      inline: false,
+    });
+  }
+
+  if (dueSoon.length > 0) {
+    fields.push({
+      name: `Due Soon (${dueSoon.length})`,
+      value: formatTaskListForEmbed(dueSoon),
+      inline: false,
+    });
+  }
+
+  if (digest.top3.length > 0) {
+    fields.push({
+      name: "Top 3",
+      value: digest.top3
+        .map((task, index) => `${index + 1}. ${formatTaskForEmbed(task)}`)
+        .join("\n"),
+      inline: false,
+    });
+  }
+
+  if (digest.suggestedDefer) {
+    fields.push({
+      name: "Defer Candidate",
+      value: formatTaskForEmbed(digest.suggestedDefer),
+      inline: false,
+    });
+  }
+
+  if (digest.aiSummary) {
+    fields.push({
+      name: "AI Note",
+      value: truncate(digest.aiSummary, 180),
+      inline: false,
+    });
+  }
+
+  return new EmbedBuilder()
+    .setTitle(`${titlePrefix} | ${digest.todayIso}`)
+    .setDescription("Choose an action below to update Notion safely.")
+    .setColor(0x2f6feb)
+    .addFields(fields.slice(0, 25))
+    .setFooter({ text: "Only confirmed actions update Notion." });
+}
+
+function formatTaskListForEmbed(tasks) {
+  const visible = tasks.slice(0, config.maxTasksPerSection);
+  const lines = visible.map((task) => `- ${formatTaskForEmbed(task)}`);
+  const overflow = tasks.length - visible.length;
+  if (overflow > 0) {
+    lines.push(`- +${overflow} more`);
+  }
+  return truncate(lines.join("\n"), 1000);
+}
+
+function formatTaskForEmbed(task) {
+  const priority = String(task.priority || "").trim().toUpperCase() || "P?";
+  const due = formatDue(task);
+  return `[${priority}] ${truncate(task.title, 60)} | ${truncate(task.project, 22)} | ${due}`;
+}
+
+function formatDue(task) {
+  if (!Number.isFinite(task.dueInDays)) return task.dueIso || "no due";
+  if (task.dueInDays < 0) return `${Math.abs(task.dueInDays)}d late`;
+  if (task.dueInDays === 0) return "due today";
+  if (task.dueInDays === 1) return "due tomorrow";
+  return `due in ${task.dueInDays}d`;
+}
+
+function formatMinutes(minutes) {
+  if (!Number.isFinite(minutes)) return "n/a";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}h ${m}m`;
 }
 
 module.exports = { runDiscordBot };

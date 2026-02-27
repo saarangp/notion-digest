@@ -483,52 +483,60 @@ function buildDigestText({
   const addLine = makeAddLine(lines, config.maxSlackLines);
   const dateLabel = formatDateDisplay(todayIso);
 
-  addLine(`DAILY DIGEST — ${dateLabel}`);
+  addLine(`DAILY DIGEST | ${dateLabel}`);
   if (mode === MODE_EVENING) {
-    addLine("EVENING SWEEP");
+    addLine("MODE | EVENING SWEEP");
     if (eveningProgress) {
       addLine(
-        `Completed today: ${eveningProgress.completedToday} | Pending due today: ${eveningProgress.pendingDueToday}`,
+        `PROGRESS | done ${eveningProgress.completedToday} | pending today ${eveningProgress.pendingDueToday}`,
       );
     }
   }
 
   const overdue = ranked.filter((task) => task.bucket === BUCKETS.OVERDUE);
-  const dueSoon = ranked.filter((task) => task.bucket === BUCKETS.DUE_SOON || task.bucket === BUCKETS.DUE_TODAY);
+  const dueToday = ranked.filter((task) => task.bucket === BUCKETS.DUE_TODAY);
+  const dueSoon = ranked.filter((task) => task.bucket === BUCKETS.DUE_SOON);
 
-  if (overdue.length > 0) {
-    addLine(`OVERDUE (${overdue.length})`);
-    for (const task of overdue.slice(0, config.maxTasksPerSection)) {
-      addLine(`- ${formatTaskDisplay(task, todayIso)}`);
-    }
-  }
+  addTaskSection({
+    addLine,
+    title: "OVERDUE",
+    tasks: overdue,
+    todayIso,
+  });
 
-  if (dueSoon.length > 0) {
-    addLine(`DUE SOON (${dueSoon.length})`);
-    for (const task of dueSoon.slice(0, config.maxTasksPerSection)) {
-      addLine(`- ${formatTaskDisplay(task, todayIso)}`);
-    }
-  }
+  addTaskSection({
+    addLine,
+    title: "DUE TODAY",
+    tasks: dueToday,
+    todayIso,
+  });
+
+  addTaskSection({
+    addLine,
+    title: "DUE SOON",
+    tasks: dueSoon,
+    todayIso,
+  });
 
   if (top3.length > 0) {
     addLine("TOP 3");
     for (let i = 0; i < top3.length; i += 1) {
-      addLine(`${i + 1}. ${formatTaskDisplay(top3[i], todayIso)}`);
+      addLine(`${i + 1}. ${formatTaskCompact(top3[i], todayIso)}`);
     }
   }
 
   if (capacity.available) {
     addLine("CAPACITY");
-    addLine(`Free: ${formatMinutes(capacity.freeMinutes)} | Planned: ${formatMinutes(capacity.requiredMinutes)}`);
-    addLine(`Status: ${capacity.status === "balanced_day" ? "BALANCED" : "CONSTRAINED"}`);
+    addLine(`Free ${formatMinutes(capacity.freeMinutes)} | Planned ${formatMinutes(capacity.requiredMinutes)}`);
+    addLine(`Status ${capacity.status === "balanced_day" ? "BALANCED" : "CONSTRAINED"}`);
   }
 
   if (suggestedDefer) {
-    addLine(`Suggested defer: ${suggestedDefer.title}`);
+    addLine(`DEFER CANDIDATE | ${formatTaskCompact(suggestedDefer, todayIso)}`);
   }
 
   if (aiSummary) {
-    addLine(`AI: ${aiSummary}`);
+    addLine(`AI NOTE | ${aiSummary}`);
   }
 
   return lines.join("\n");
@@ -546,6 +554,35 @@ function formatTaskDisplay(task, todayIso) {
   return `${task.title} (${task.project}) [${formatScore(task.score)}] — ${duePhrase(
     dateDiffDays(todayIso, task.dueIso),
   )}`;
+}
+
+function addTaskSection({ addLine, title, tasks, todayIso }) {
+  if (tasks.length === 0) return;
+
+  addLine(`${title} (${tasks.length})`);
+  const visible = tasks.slice(0, config.maxTasksPerSection);
+  for (const task of visible) {
+    addLine(`- ${formatTaskCompact(task, todayIso)}`);
+  }
+
+  const overflow = tasks.length - visible.length;
+  if (overflow > 0) {
+    addLine(`- +${overflow} more`);
+  }
+}
+
+function formatTaskCompact(task, todayIso) {
+  const priority = normalizePriorityTag(task.priority);
+  const title = truncate(task.title, 54);
+  const project = truncate(task.project, 18);
+  const due = duePhrase(dateDiffDays(todayIso, task.dueIso));
+  const estimate = formatMinutes(task.estimatedMinutes);
+  return `${priority} ${title} | ${project} | ${due} | ${estimate}`;
+}
+
+function normalizePriorityTag(priority) {
+  const text = String(priority || "").trim();
+  return text ? `[${text.toUpperCase()}]` : "[P?]";
 }
 
 function formatScore(value) {
