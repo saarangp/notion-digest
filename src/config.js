@@ -170,4 +170,5 @@ module.exports = {
   normalizeMode,
   normalizeAppMode,
   validateConfig,
+  parseInteger,
 };

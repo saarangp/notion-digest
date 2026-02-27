@@ -6,6 +6,7 @@ const {
   MODE_EVENING,
   BUCKETS,
   PRIORITY_TO_NUMERIC,
+  parseInteger,
 } = require("./config");
 const { log } = require("./logger");
 
@@ -479,16 +480,15 @@ function buildDigestText({
   eveningProgress,
 }) {
   const lines = [];
+  const addLine = makeAddLine(lines, config.maxSlackLines);
   const dateLabel = formatDateDisplay(todayIso);
 
-  addLine(lines, `DAILY DIGEST — ${dateLabel}`, config.maxSlackLines);
+  addLine(`DAILY DIGEST — ${dateLabel}`);
   if (mode === MODE_EVENING) {
-    addLine(lines, "EVENING SWEEP", config.maxSlackLines);
+    addLine("EVENING SWEEP");
     if (eveningProgress) {
       addLine(
-        lines,
         `Completed today: ${eveningProgress.completedToday} | Pending due today: ${eveningProgress.pendingDueToday}`,
-        config.maxSlackLines,
       );
     }
   }
@@ -497,54 +497,49 @@ function buildDigestText({
   const dueSoon = ranked.filter((task) => task.bucket === BUCKETS.DUE_SOON || task.bucket === BUCKETS.DUE_TODAY);
 
   if (overdue.length > 0) {
-    addLine(lines, `OVERDUE (${overdue.length})`, config.maxSlackLines);
+    addLine(`OVERDUE (${overdue.length})`);
     for (const task of overdue.slice(0, config.maxTasksPerSection)) {
-      addLine(lines, `- ${formatTaskDisplay(task, todayIso)}`, config.maxSlackLines);
+      addLine(`- ${formatTaskDisplay(task, todayIso)}`);
     }
   }
 
   if (dueSoon.length > 0) {
-    addLine(lines, `DUE SOON (${dueSoon.length})`, config.maxSlackLines);
+    addLine(`DUE SOON (${dueSoon.length})`);
     for (const task of dueSoon.slice(0, config.maxTasksPerSection)) {
-      addLine(lines, `- ${formatTaskDisplay(task, todayIso)}`, config.maxSlackLines);
+      addLine(`- ${formatTaskDisplay(task, todayIso)}`);
     }
   }
 
   if (top3.length > 0) {
-    addLine(lines, "TOP 3", config.maxSlackLines);
+    addLine("TOP 3");
     for (let i = 0; i < top3.length; i += 1) {
-      addLine(
-        lines,
-        `${i + 1}. ${formatTaskDisplay(top3[i], todayIso)}`,
-        config.maxSlackLines,
-      );
+      addLine(`${i + 1}. ${formatTaskDisplay(top3[i], todayIso)}`);
     }
   }
 
   if (capacity.available) {
-    addLine(lines, "CAPACITY", config.maxSlackLines);
-    addLine(
-      lines,
-      `Free: ${formatMinutes(capacity.freeMinutes)} | Planned: ${formatMinutes(capacity.requiredMinutes)}`,
-      config.maxSlackLines,
-    );
-    addLine(lines, `Status: ${capacity.status === "balanced_day" ? "BALANCED" : "CONSTRAINED"}`, config.maxSlackLines);
+    addLine("CAPACITY");
+    addLine(`Free: ${formatMinutes(capacity.freeMinutes)} | Planned: ${formatMinutes(capacity.requiredMinutes)}`);
+    addLine(`Status: ${capacity.status === "balanced_day" ? "BALANCED" : "CONSTRAINED"}`);
   }
 
   if (suggestedDefer) {
-    addLine(lines, `Suggested defer: ${suggestedDefer.title}`, config.maxSlackLines);
+    addLine(`Suggested defer: ${suggestedDefer.title}`);
   }
 
   if (aiSummary) {
-    addLine(lines, `AI: ${aiSummary}`, config.maxSlackLines);
+    addLine(`AI: ${aiSummary}`);
   }
 
   return lines.join("\n");
 }
 
-function addLine(lines, line, maxLines) {
-  if (lines.length >= maxLines) return;
-  lines.push(line);
+function makeAddLine(lines, maxLines) {
+  return function addLine(line) {
+    if (lines.length < maxLines) {
+      lines.push(line);
+    }
+  };
 }
 
 function formatTaskDisplay(task, todayIso) {
@@ -611,7 +606,7 @@ async function maybeGenerateGeminiSummary({ tasks, todayIso }) {
   const scoped = tasks
     .filter((task) => task.dueIso <= aiEnd)
     .slice(0, config.aiSummaryMaxTasks)
-    .map((task) => ({ t: shorten(task.title, 70), d: task.dueIso, p: task.priority }));
+    .map((task) => ({ t: truncate(task.title, 70), d: task.dueIso, p: task.priority }));
 
   if (scoped.length === 0) {
     return "no immediate blockers";
@@ -837,19 +832,8 @@ function getLocalHour(timezone) {
   );
 }
 
-function parseInteger(raw, fallback) {
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function shorten(value, maxLen) {
-  const text = String(value || "").trim();
-  if (text.length <= maxLen) return text;
-  return `${text.slice(0, Math.max(0, maxLen - 3))}...`;
-}
-
 function truncate(value, maxLen) {
-  const text = String(value || "");
+  const text = String(value || "").trim();
   if (text.length <= maxLen) return text;
   return `${text.slice(0, Math.max(0, maxLen - 3))}...`;
 }
@@ -861,6 +845,5 @@ module.exports = {
   computeDigest,
   shouldRunThisHour,
   getLocalHour,
-  shorten,
   truncate,
 };
