@@ -1,67 +1,33 @@
-# Notion Task Triage -> Discord (Primary)
+# Notion Task Digest with Discord Bot + Webhook
 
-Deterministic daily task triage from Notion, delivered by webhook.
+Deterministic daily digest still runs exactly as before (same scoring, buckets, Top 3).
+You can now also run a Discord bot for evening interactive actions.
 
-This project moved to **Discord-first delivery** for lower friction and personal use.
-Slack remains supported as fallback via `NOTIFIER=slack`.
+## Features
 
-## What it does
+- Deterministic Notion digest engine (unchanged logic)
+- Webhook delivery (Discord/Slack) for scheduled digest
+- Discord bot commands for evening actions:
+  - `/evening` (summary + action buttons)
+  - `/reschedule` (select task -> date -> confirm)
+  - `/defer` (select task -> +days -> confirm)
+  - `/done` (select task -> confirm)
+- Safe confirmation before any Notion mutation
+- Minimal persisted pending state in `logs/discord-bot-state.json`
 
-- Pulls open Notion tasks due within the configured window (`DUE_WINDOW_DAYS`, default 7) plus overdue tasks
-- Computes triage features:
-  - `due_in_days`
-  - `days_since_last_touch`
-  - `is_overdue`
-- Scores tasks deterministically (no adaptive behavior)
-- Buckets tasks into:
-  - `overdue`
-  - `due_today`
-  - `due_soon` (default 1-3 days)
-  - `later` (default 4-7 days)
-- Picks Top 3 focus tasks with project-diversity constraint
-- Optionally checks today capacity from Google Calendar
-- Sends compact daily message to Discord (or Slack)
-- Writes daily JSON log at `logs/YYYY-MM-DD.json`
+## Runtime Modes
 
-Optional AI summary exists but is off by default (`ENABLE_AI_SUMMARY=0`).
+Use `APP_MODE`:
 
-## Scoring Model
+- `digest`: webhook digest only (default)
+- `bot`: Discord bot only
+- `both`: run digest first, then keep bot running
 
-Priority mapping:
-- `P0=5`, `P1=4`, `P2=3`, `P3=2`
+`MODE` still controls digest scope:
 
-Normalizations:
-- `P(p) = p / 5`
-- `D(d) = 1 / (max(d, 0) + 1)` where `d = due_in_days`
-- `S(s) = log(1 + s) / log(1 + STALENESS_CAP_DAYS)` where `s = days_since_last_touch`
-
-Final score:
-- `score = W_PRIORITY * P + W_DUE * D + W_STALE * S + overdue_boost`
-- default weights:
-  - `W_PRIORITY=0.5`
-  - `W_DUE=0.35`
-  - `W_STALE=0.15`
-  - `OVERDUE_BOOST=0`
-
-Sorting:
-1. Bucket precedence (`overdue` -> `due_today` -> `due_soon` -> `later`)
-2. Score descending
-3. Due date ascending
-
-## Notion Schema (Default Property Names)
-
-- `Task` (title)
-- `Priority` (`P0`..`P3`)
-- `Due` (date)
-- `done` (checkbox)
-- `Project`
-- `estimated_minutes`
-- `Created time`
-- `Last edited time`
-
-Closed tasks are excluded when either:
-- `done` checkbox is true
-- status value is in `CLOSED_STATUS_VALUES` (default `done`)
+- `morning`
+- `evening`
+- `both`
 
 ## Quick Start
 
@@ -72,79 +38,74 @@ npm install
 npm run dry-run
 ```
 
-Run explicitly:
+## Discord Bot Setup (Guild-Only)
+
+Guild-only means command registration is limited to one server (your private server), and updates appear quickly.
+
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create an app -> create a bot
+3. Copy values:
+   - Bot token -> `DISCORD_BOT_TOKEN`
+   - Application ID -> `DISCORD_APP_ID`
+4. Enable bot scopes/permissions when inviting bot to your server:
+   - Scopes: `bot`, `applications.commands`
+   - Bot permissions: `Send Messages`, `Use Application Commands`
+5. Get your server ID (enable Developer Mode in Discord -> right-click server -> Copy Server ID) -> `DISCORD_GUILD_ID`
+6. Set:
+   - `APP_MODE=bot` (or `both`)
+   - `DISCORD_BOT_TOKEN=...`
+   - `DISCORD_APP_ID=...`
+   - `DISCORD_GUILD_ID=...`
+
+Run bot:
 
 ```bash
+npm run bot
+```
+
+## Webhook Setup (Transition-Compatible)
+
+Webhook path still works unchanged.
+
+- `NOTIFIER=discord` + `DISCORD_WEBHOOK_URL=...`
+- or `NOTIFIER=slack` + `SLACK_WEBHOOK_URL=...`
+
+Run webhook digest:
+
+```bash
+npm run digest
 npm run morning
 npm run evening
 ```
 
-Runtime mode controls:
-- `MODE=morning`: run only morning triage
-- `MODE=evening`: run only evening sweep
-- `MODE=both`: run both in one process (this is the default in `.env.example`)
+## Suggested Migration
 
-In GitHub Actions, each scheduled step sets mode explicitly (`morning` or `evening`).
-`MODE=both` is mainly useful for local/manual runs.
+1. Keep existing schedule using `APP_MODE=digest`
+2. Start bot separately with `APP_MODE=bot`
+3. Use bot evening actions for a few days
+4. Optionally move to `APP_MODE=both` where needed
 
-## Discord Setup (Recommended)
+## New Environment Variables
 
-1. In Discord, open your target channel settings.
-2. Go to `Integrations` -> `Webhooks` -> `New Webhook`.
-3. Copy the webhook URL.
-4. Set:
-   - `NOTIFIER=discord`
-   - `DISCORD_WEBHOOK_URL=<your webhook>`
+- `APP_MODE=digest`
+- `DISCORD_BOT_TOKEN=`
+- `DISCORD_APP_ID=`
+- `DISCORD_GUILD_ID=`
+- `DISCORD_BOT_STATE_PATH=logs/discord-bot-state.json`
+- `DISCORD_INTERACTION_TTL_MINUTES=30`
+- `DISCORD_MAX_ACTION_TASKS=10`
 
-## GitHub Actions Secrets
+Existing env vars stay the same, including Notion schema vars and webhook vars.
 
-Required:
-- `NOTION_API_KEY`
-- `NOTION_DATABASE_ID`
-- `DISCORD_WEBHOOK_URL` (if `NOTIFIER=discord`)
-
-Optional:
-- `SLACK_WEBHOOK_URL` (if `NOTIFIER=slack`)
-- `GEMINI_API_KEY` (if AI summary enabled)
-- `GOOGLE_CLIENT_EMAIL`
-- `GOOGLE_PRIVATE_KEY`
-- `GOOGLE_CALENDAR_ID`
-
-## Useful Variables
-
-- `NOTIFIER` (`discord` or `slack`, recommended `discord`)
-- `ENABLE_AI_SUMMARY` (`0` or `1`)
-- `HIGH_PRIORITY_VALUES` (default `p0`)
-- `DUE_WINDOW_DAYS` (default `7`)
-- `DUE_SOON_DAYS` (default `3`)
-- `W_PRIORITY`, `W_DUE`, `W_STALE`, `OVERDUE_BOOST`
-- `TOP3_MAX_PER_PROJECT`
-- `WORKDAY_START_HOUR`, `WORKDAY_END_HOUR`, `FOCUS_BUFFER_MINUTES`
-- `MAX_SLACK_LINES`, `MAX_TASKS_PER_SECTION`
-
-Workflow: `.github/workflows/notion-digest.yml`
-
-## Bulk Upload `.env` to GitHub Actions
-
-Use the helper script to push known keys from `.env` to GitHub Actions secrets/variables:
+## Tests
 
 ```bash
-cd /Users/saarang/Documents/Personal/notion-digest
-./scripts/sync_github_actions_from_env.sh <owner>/<repo> .env
+npm test
 ```
 
-If you already set a default repo in `gh`, you can omit the repo argument:
+Current tests cover core action handler logic for:
 
-```bash
-./scripts/sync_github_actions_from_env.sh
-```
-
-## Roadmap / TODO
-
-- Build a real Discord bot (not just webhook) for evening triage interaction.
-- Add night-run actions directly in Discord:
-  - `Sweep` (leave as-is)
-  - `Reschedule` (move due date)
-  - `Defer` (lower urgency)
-  - `Mark done`
-- Add per-task quick actions and confirmation flow for safe updates to Notion.
+- done
+- reschedule
+- defer
+- pending action TTL creation
