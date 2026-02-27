@@ -2,11 +2,9 @@ name: Notion Slack Digest
 
 on:
   schedule:
-    # 9:00 AM PT across DST
-    - cron: "0 16 * * *"
+    # 9:00 AM PST (17:00 UTC). During PDT (UTC-7) this fires at 10:00 AM PDT.
     - cron: "0 17 * * *"
-    # 7:00 PM PT across DST
-    - cron: "0 2 * * *"
+    # 7:00 PM PST (03:00 UTC). During PDT (UTC-7) this fires at 8:00 PM PDT.
     - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
@@ -38,7 +36,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Morning digest
-        if: github.event_name == 'schedule' || github.event.inputs.mode == 'morning' || github.event.inputs.mode == 'both'
+        if: github.event.schedule == '0 17 * * *' || github.event.inputs.mode == 'morning' || github.event.inputs.mode == 'both'
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
@@ -86,12 +84,12 @@ jobs:
           MAX_TASKS_PER_SECTION: ${{ vars.MAX_TASKS_PER_SECTION }}
           TIMEZONE: America/Los_Angeles
           MORNING_HOUR_LOCAL: 9
-          ENFORCE_LOCAL_HOUR: ${{ github.event_name == 'schedule' && '1' || '0' }}
+          ENFORCE_LOCAL_HOUR: '0'
           MODE: morning
         run: node src/index.js
 
       - name: Evening sweep
-        if: github.event_name == 'schedule' || github.event.inputs.mode == 'evening' || github.event.inputs.mode == 'both'
+        if: github.event.schedule == '0 3 * * *' || github.event.inputs.mode == 'evening' || github.event.inputs.mode == 'both'
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
@@ -139,6 +137,6 @@ jobs:
           MAX_TASKS_PER_SECTION: ${{ vars.MAX_TASKS_PER_SECTION }}
           TIMEZONE: America/Los_Angeles
           EVENING_HOUR_LOCAL: 19
-          ENFORCE_LOCAL_HOUR: ${{ github.event_name == 'schedule' && '1' || '0' }}
+          ENFORCE_LOCAL_HOUR: '0'
           MODE: evening
         run: node src/index.js
