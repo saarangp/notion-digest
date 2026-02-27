@@ -79,6 +79,14 @@ npm run morning
 npm run evening
 ```
 
+Runtime mode controls:
+- `MODE=morning`: run only morning triage
+- `MODE=evening`: run only evening sweep
+- `MODE=both`: run both in one process (this is the default in `.env.example`)
+
+In GitHub Actions, each scheduled step sets mode explicitly (`morning` or `evening`).
+`MODE=both` is mainly useful for local/manual runs.
+
 ## Discord Setup (Recommended)
 
 1. In Discord, open your target channel settings.

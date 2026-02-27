@@ -127,6 +127,8 @@ async function runTriage(mode) {
   const todayIso = getTodayIso(config.timezone);
   const endIso = addDaysIso(todayIso, config.dueWindowDays);
   const tasks = await fetchTasks(mode, todayIso, endIso);
+  const eveningProgress =
+    mode === MODE_EVENING ? await fetchEveningProgressStats(todayIso) : null;
 
   const preprocessed = tasks.map((task) => preprocessTask(task, todayIso));
   const scored = preprocessed.map((task) => scoreTask(task));
@@ -149,6 +151,7 @@ async function runTriage(mode) {
     capacity,
     suggestedDefer,
     aiSummary,
+    eveningProgress,
   });
 
   await postNotification(text);
@@ -184,6 +187,61 @@ async function fetchTasks(mode, todayIso, endIso) {
 
   await resolveProjectNames(tasks);
   return tasks;
+}
+
+async function fetchEveningProgressStats(todayIso) {
+  const tomorrowIso = addDaysIso(todayIso, 1);
+
+  const [editedTodayPages, dueTodayPages] = await Promise.all([
+    queryPages({
+      and: [
+        {
+          timestamp: "last_edited_time",
+          last_edited_time: { on_or_after: todayIso },
+        },
+        {
+          timestamp: "last_edited_time",
+          last_edited_time: { before: tomorrowIso },
+        },
+      ],
+    }),
+    queryPages({
+      property: config.notionDueProp,
+      date: { equals: todayIso },
+    }),
+  ]);
+
+  const completedToday = editedTodayPages
+    .map((page) => mapPageToTask(page))
+    .filter((task) => isClosed(task)).length;
+
+  const pendingDueToday = dueTodayPages
+    .map((page) => mapPageToTask(page))
+    .filter((task) => !isClosed(task)).length;
+
+  return {
+    completedToday,
+    pendingDueToday,
+  };
+}
+
+async function queryPages(filter) {
+  let cursor;
+  const pages = [];
+
+  do {
+    const response = await notion.databases.query({
+      database_id: config.notionDatabaseId,
+      filter,
+      page_size: 100,
+      start_cursor: cursor,
+    });
+
+    pages.push(...response.results);
+    cursor = response.has_more ? response.next_cursor : undefined;
+  } while (cursor);
+
+  return pages;
 }
 
 function mapPageToTask(page) {
@@ -502,13 +560,29 @@ function pickSuggestedDefer(top3, capacity) {
   return [...top3].sort((a, b) => a.score - b.score)[0];
 }
 
-function buildSlackText({ mode, todayIso, ranked, top3, capacity, suggestedDefer, aiSummary }) {
+function buildSlackText({
+  mode,
+  todayIso,
+  ranked,
+  top3,
+  capacity,
+  suggestedDefer,
+  aiSummary,
+  eveningProgress,
+}) {
   const lines = [];
   const dateLabel = formatDateDisplay(todayIso);
 
   addLine(lines, `DAILY TRIAGE — ${dateLabel}`, config.maxSlackLines);
   if (mode === MODE_EVENING) {
-    addLine(lines, "(Evening sweep)", config.maxSlackLines);
+    addLine(lines, "🌙 EVENING SWEEP", config.maxSlackLines);
+    if (eveningProgress) {
+      addLine(
+        lines,
+        `Completed today: ${eveningProgress.completedToday} | Pending due today: ${eveningProgress.pendingDueToday}`,
+        config.maxSlackLines,
+      );
+    }
   }
 
   const overdue = ranked.filter((task) => task.bucket === BUCKETS.OVERDUE);
