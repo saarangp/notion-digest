@@ -1,0 +1,144 @@
+name: Notion Slack Digest
+
+on:
+  schedule:
+    # 9:00 AM PT across DST
+    - cron: "0 16 * * *"
+    - cron: "0 17 * * *"
+    # 7:00 PM PT across DST
+    - cron: "0 2 * * *"
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - morning
+          - evening
+          - both
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Morning digest
+        if: github.event_name == 'schedule' || github.event.inputs.mode == 'morning' || github.event.inputs.mode == 'both'
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTIFIER: ${{ vars.NOTIFIER }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+          ENABLE_AI_SUMMARY: ${{ vars.ENABLE_AI_SUMMARY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          AI_SUMMARY_WINDOW_DAYS: ${{ vars.AI_SUMMARY_WINDOW_DAYS }}
+          AI_SUMMARY_MAX_TASKS: ${{ vars.AI_SUMMARY_MAX_TASKS }}
+
+          NOTION_TASK_PROP: ${{ vars.NOTION_TASK_PROP }}
+          NOTION_PRIORITY_PROP: ${{ vars.NOTION_PRIORITY_PROP }}
+          NOTION_STATUS_PROP: ${{ vars.NOTION_STATUS_PROP }}
+          NOTION_DUE_PROP: ${{ vars.NOTION_DUE_PROP }}
+          NOTION_DONE_CHECKBOX_PROP: ${{ vars.NOTION_DONE_CHECKBOX_PROP }}
+          NOTION_PROJECT_PROP: ${{ vars.NOTION_PROJECT_PROP }}
+          NOTION_ESTIMATED_MINUTES_PROP: ${{ vars.NOTION_ESTIMATED_MINUTES_PROP }}
+          NOTION_CREATED_TIME_PROP: ${{ vars.NOTION_CREATED_TIME_PROP }}
+          NOTION_LAST_EDITED_PROP: ${{ vars.NOTION_LAST_EDITED_PROP }}
+
+          HIGH_PRIORITY_VALUES: ${{ vars.HIGH_PRIORITY_VALUES }}
+          CLOSED_STATUS_VALUES: ${{ vars.CLOSED_STATUS_VALUES }}
+          DUE_WINDOW_DAYS: ${{ vars.DUE_WINDOW_DAYS }}
+          DUE_SOON_DAYS: ${{ vars.DUE_SOON_DAYS }}
+
+          W_PRIORITY: ${{ vars.W_PRIORITY }}
+          W_DUE: ${{ vars.W_DUE }}
+          W_STALE: ${{ vars.W_STALE }}
+          OVERDUE_BOOST: ${{ vars.OVERDUE_BOOST }}
+          STALENESS_CAP_DAYS: ${{ vars.STALENESS_CAP_DAYS }}
+          TOP3_MAX_PER_PROJECT: ${{ vars.TOP3_MAX_PER_PROJECT }}
+          DEFAULT_ESTIMATED_MINUTES: ${{ vars.DEFAULT_ESTIMATED_MINUTES }}
+
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
+          WORKDAY_START_HOUR: ${{ vars.WORKDAY_START_HOUR }}
+          WORKDAY_END_HOUR: ${{ vars.WORKDAY_END_HOUR }}
+          FOCUS_BUFFER_MINUTES: ${{ vars.FOCUS_BUFFER_MINUTES }}
+
+          MAX_SLACK_LINES: ${{ vars.MAX_SLACK_LINES }}
+          MAX_TASKS_PER_SECTION: ${{ vars.MAX_TASKS_PER_SECTION }}
+          TIMEZONE: America/Los_Angeles
+          MORNING_HOUR_LOCAL: 9
+          ENFORCE_LOCAL_HOUR: ${{ github.event_name == 'schedule' && '1' || '0' }}
+          MODE: morning
+        run: node src/index.js
+
+      - name: Evening sweep
+        if: github.event_name == 'schedule' || github.event.inputs.mode == 'evening' || github.event.inputs.mode == 'both'
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTIFIER: ${{ vars.NOTIFIER }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+          ENABLE_AI_SUMMARY: ${{ vars.ENABLE_AI_SUMMARY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          AI_SUMMARY_WINDOW_DAYS: ${{ vars.AI_SUMMARY_WINDOW_DAYS }}
+          AI_SUMMARY_MAX_TASKS: ${{ vars.AI_SUMMARY_MAX_TASKS }}
+
+          NOTION_TASK_PROP: ${{ vars.NOTION_TASK_PROP }}
+          NOTION_PRIORITY_PROP: ${{ vars.NOTION_PRIORITY_PROP }}
+          NOTION_STATUS_PROP: ${{ vars.NOTION_STATUS_PROP }}
+          NOTION_DUE_PROP: ${{ vars.NOTION_DUE_PROP }}
+          NOTION_DONE_CHECKBOX_PROP: ${{ vars.NOTION_DONE_CHECKBOX_PROP }}
+          NOTION_PROJECT_PROP: ${{ vars.NOTION_PROJECT_PROP }}
+          NOTION_ESTIMATED_MINUTES_PROP: ${{ vars.NOTION_ESTIMATED_MINUTES_PROP }}
+          NOTION_CREATED_TIME_PROP: ${{ vars.NOTION_CREATED_TIME_PROP }}
+          NOTION_LAST_EDITED_PROP: ${{ vars.NOTION_LAST_EDITED_PROP }}
+
+          HIGH_PRIORITY_VALUES: ${{ vars.HIGH_PRIORITY_VALUES }}
+          CLOSED_STATUS_VALUES: ${{ vars.CLOSED_STATUS_VALUES }}
+          DUE_WINDOW_DAYS: ${{ vars.DUE_WINDOW_DAYS }}
+          DUE_SOON_DAYS: ${{ vars.DUE_SOON_DAYS }}
+
+          W_PRIORITY: ${{ vars.W_PRIORITY }}
+          W_DUE: ${{ vars.W_DUE }}
+          W_STALE: ${{ vars.W_STALE }}
+          OVERDUE_BOOST: ${{ vars.OVERDUE_BOOST }}
+          STALENESS_CAP_DAYS: ${{ vars.STALENESS_CAP_DAYS }}
+          TOP3_MAX_PER_PROJECT: ${{ vars.TOP3_MAX_PER_PROJECT }}
+          DEFAULT_ESTIMATED_MINUTES: ${{ vars.DEFAULT_ESTIMATED_MINUTES }}
+
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
+          WORKDAY_START_HOUR: ${{ vars.WORKDAY_START_HOUR }}
+          WORKDAY_END_HOUR: ${{ vars.WORKDAY_END_HOUR }}
+          FOCUS_BUFFER_MINUTES: ${{ vars.FOCUS_BUFFER_MINUTES }}
+
+          MAX_SLACK_LINES: ${{ vars.MAX_SLACK_LINES }}
+          MAX_TASKS_PER_SECTION: ${{ vars.MAX_TASKS_PER_SECTION }}
+          TIMEZONE: America/Los_Angeles
+          EVENING_HOUR_LOCAL: 19
+          ENFORCE_LOCAL_HOUR: ${{ github.event_name == 'schedule' && '1' || '0' }}
+          MODE: evening
+        run: node src/index.js

@@ -1,0 +1,21 @@
+{
+  "name": "notion-digest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Flowkeeper-style Notion digest to Slack webhook",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "morning": "MODE=morning node src/index.js",
+    "evening": "MODE=evening node src/index.js",
+    "dry-run": "DRY_RUN=1 MODE=morning node src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@notionhq/client": "^2.2.15",
+    "dotenv": "^16.6.1",
+    "googleapis": "^128.0.0"
+  }
+}
