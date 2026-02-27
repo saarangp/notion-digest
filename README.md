@@ -8,6 +8,7 @@ You can now also run a Discord bot for evening interactive actions.
 - Deterministic Notion digest engine (unchanged logic)
 - Webhook delivery (Discord/Slack) for scheduled digest
 - Discord bot commands for evening actions:
+  - `/digest` (show digest anytime)
   - `/evening` (summary + action buttons)
   - `/reschedule` (select task -> date -> confirm)
   - `/defer` (select task -> +days -> confirm)
@@ -61,6 +62,43 @@ Run bot:
 
 ```bash
 npm run bot
+```
+
+### Run Bot 24/7 Locally (PM2)
+
+Use PM2 if you want the bot to keep running after closing the terminal.
+
+Install PM2:
+
+```bash
+npm install -g pm2
+```
+
+Start bot with environment from your shell / `.env`:
+
+```bash
+cd /Users/saarang/Documents/Personal/notion-digest
+APP_MODE=bot pm2 start src/index.js --name notion-bot --interpreter node --update-env
+```
+
+Persist across reboots:
+
+```bash
+pm2 save
+pm2 startup
+```
+
+`pm2 startup` prints a command. Run that one-time command.
+
+Useful PM2 commands:
+
+```bash
+pm2 status
+pm2 logs notion-bot --lines 100
+pm2 restart notion-bot --update-env
+pm2 stop notion-bot
+pm2 delete notion-bot
+pm2 save
 ```
 
 ## Webhook Setup (Transition-Compatible)
