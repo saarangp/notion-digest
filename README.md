@@ -124,6 +124,21 @@ Optional:
 
 Workflow: `.github/workflows/notion-digest.yml`
 
+## Bulk Upload `.env` to GitHub Actions
+
+Use the helper script to push known keys from `.env` to GitHub Actions secrets/variables:
+
+```bash
+cd /Users/saarang/Documents/Personal/notion-digest
+./scripts/sync_github_actions_from_env.sh <owner>/<repo> .env
+```
+
+If you already set a default repo in `gh`, you can omit the repo argument:
+
+```bash
+./scripts/sync_github_actions_from_env.sh
+```
+
 ## Roadmap / TODO
 
 - Build a real Discord bot (not just webhook) for evening triage interaction.
