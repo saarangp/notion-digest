@@ -1,30 +1,46 @@
-# Notion Task Digest with Discord Bot + Webhook
+# Notion Digest + Discord Action Bot
 
-Deterministic daily digest still runs exactly as before (same scoring, buckets, Top 3).
-You can now also run a Discord bot for evening interactive actions.
+Deterministic daily task digest from Notion, with optional Google Calendar capacity checks and a Discord bot for interactive task actions.
 
-## Features
+## What This Project Does
 
-- Deterministic Notion digest engine (unchanged logic)
-- Webhook delivery (Discord/Slack) for scheduled digest
-- Discord bot commands for evening actions:
-  - `/digest` (show digest anytime)
-  - `/evening` (summary + action buttons)
-  - `/reschedule` (select task -> date -> confirm)
-  - `/defer` (select task -> +days -> confirm)
-  - `/done` (select task -> confirm)
-- Safe confirmation before any Notion mutation
-- Minimal persisted pending state in `logs/discord-bot-state.json`
+- Pulls relevant tasks from Notion (due-window + overdue)
+- Scores and ranks tasks deterministically
+- Builds compact digest output:
+  - Overdue
+  - Due today
+  - Due soon
+  - Top 3
+  - Capacity
+  - Suggested defer (if constrained)
+- Delivers digest to Discord or Slack webhooks
+- Supports a Discord slash-command bot:
+  - `/digest` (anytime digest)
+  - `/evening` (interactive evening sweep)
+  - `/reschedule`, `/defer`, `/done`
+- Optional Gemini AI layer for morning and `/digest`:
+  - Suggested order
+  - Start now (90m)
+  - If constrained fallback
+
+## Architecture
+
+- `src/digestService.js`: Notion ingest, scoring, ranking, capacity, AI plan/summary, digest rendering
+- `src/discordBotService.js`: slash commands, embeds, action flows, confirm/cancel safety
+- `src/botActions.js`: action validation + Notion property update payloads
+- `src/botStateStore.js`: pending action persistence/TTL
+- `src/config.js`: env parsing/defaults
+- `.github/workflows/notion-digest.yml`: scheduled digest automation
 
 ## Runtime Modes
 
-Use `APP_MODE`:
+Set `APP_MODE`:
 
-- `digest`: webhook digest only (default)
-- `bot`: Discord bot only
-- `both`: run digest first, then keep bot running
+- `digest`: run digest webhook flow and exit
+- `bot`: run Discord bot only
+- `both`: run digest flow, then keep bot running
 
-`MODE` still controls digest scope:
+Set `MODE` for digest scope:
 
 - `morning`
 - `evening`
@@ -36,37 +52,171 @@ Use `APP_MODE`:
 cd /Users/saarang/Documents/Personal/notion-digest
 cp .env.example .env
 npm install
-npm run dry-run
+DRY_RUN=1 MODE=morning node src/index.js
 ```
 
-## Discord Bot Setup (Guild-Only)
+## Environment Setup
 
-Guild-only means command registration is limited to one server (your private server), and updates appear quickly.
+### Required Core
 
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create an app -> create a bot
-3. Copy values:
-   - Bot token -> `DISCORD_BOT_TOKEN`
-   - Application ID -> `DISCORD_APP_ID`
-4. Enable bot scopes/permissions when inviting bot to your server:
-   - Scopes: `bot`, `applications.commands`
-   - Bot permissions: `Send Messages`, `Use Application Commands`
-5. Get your server ID (enable Developer Mode in Discord -> right-click server -> Copy Server ID) -> `DISCORD_GUILD_ID`
-6. Set:
-   - `APP_MODE=bot` (or `both`)
-   - `DISCORD_BOT_TOKEN=...`
-   - `DISCORD_APP_ID=...`
-   - `DISCORD_GUILD_ID=...`
+- `NOTION_API_KEY`
+- `NOTION_DATABASE_ID`
 
-Run bot:
+### Webhook Delivery
+
+- `NOTIFIER=discord` with `DISCORD_WEBHOOK_URL`
+- or `NOTIFIER=slack` with `SLACK_WEBHOOK_URL`
+
+### Discord Bot
+
+- `APP_MODE=bot` (or `both`)
+- `DISCORD_BOT_TOKEN`
+- `DISCORD_APP_ID`
+- `DISCORD_GUILD_ID`
+- Optional:
+  - `DISCORD_BOT_STATE_PATH` (default `logs/discord-bot-state.json`)
+  - `DISCORD_INTERACTION_TTL_MINUTES` (default `30`)
+  - `DISCORD_MAX_ACTION_TASKS` (default `10`)
+
+### Google Calendar Capacity (optional, read-only)
+
+- `GOOGLE_CLIENT_EMAIL`
+- `GOOGLE_PRIVATE_KEY`
+- `GOOGLE_CALENDAR_ID`
+- Optional:
+  - `WORKDAY_START_HOUR`
+  - `WORKDAY_END_HOUR`
+  - `FOCUS_BUFFER_MINUTES`
+
+### Gemini AI (optional)
+
+- `ENABLE_AI_SUMMARY=1`
+- `GEMINI_API_KEY`
+- Optional:
+  - `GEMINI_MODEL` (default from config)
+  - `AI_SUMMARY_WINDOW_DAYS`
+  - `AI_SUMMARY_MAX_TASKS`
+
+AI is guarded:
+- If disabled/missing key, digest still works (no AI sections).
+- AI plan currently applies to morning-style digest flows (including `/digest`), not evening sweep.
+
+## Running Locally
+
+### Digest only
+
+```bash
+npm run morning
+npm run evening
+npm run digest
+```
+
+### Bot only
 
 ```bash
 npm run bot
 ```
 
-### Run Bot 24/7 Locally (PM2)
+### Both
 
-Use PM2 if you want the bot to keep running after closing the terminal.
+```bash
+npm run both
+```
+
+## Day in the Life
+
+### 1. Scheduled morning webhook digest
+
+- GitHub Actions triggers hourly.
+- App sends only at your configured local morning hour (`MORNING_HOUR_LOCAL`).
+- Digest posts to your configured webhook (`DISCORD_WEBHOOK_URL` or `SLACK_WEBHOOK_URL`).
+
+### 2. Manual `/digest` check-in
+
+- Bot is running in `APP_MODE=bot`.
+- You run `/digest` in Discord anytime.
+- Bot returns the morning-style digest embed, including AI plan sections when enabled.
+
+### 3. Evening `/evening` triage with confirm flow
+
+- You run `/evening` in Discord.
+- Review the evening sweep embed.
+- Choose an action (`Do Nothing`, `Reschedule`, `Defer`, `Mark Done`).
+- For mutating actions:
+  - select task
+  - provide details if needed (date or defer days)
+  - press `Confirm`
+- Only confirmed actions write to Notion.
+
+## Discord Bot Commands
+
+- `/digest`: anytime digest embed
+- `/evening`: evening sweep embed + action buttons
+- `/reschedule`: select task -> date modal -> confirm
+- `/defer`: select task -> +days -> confirm
+- `/done`: select task -> confirm
+
+Evening buttons:
+- `Do Nothing`
+- `Reschedule`
+- `Defer`
+- `Mark Done`
+
+All Notion mutations require explicit confirmation.
+
+## Dry Run Behavior
+
+`DRY_RUN=1`:
+- Digest mode: logs payload instead of posting webhook
+- Bot action confirms: logs intended Notion mutation and returns `(DRY_RUN)`
+
+Example:
+
+```bash
+DRY_RUN=1 MODE=morning node src/index.js
+```
+
+AI debug in dry-run:
+
+```bash
+DRY_RUN=1 MODE=morning node src/index.js 2>&1 | rg "AI_DEBUG|Gemini .*skipped|DRY_RUN enabled"
+```
+
+## Scheduling (GitHub Actions)
+
+Workflow: [`.github/workflows/notion-digest.yml`](.github/workflows/notion-digest.yml)
+
+Current behavior:
+- Workflow runs hourly.
+- App-level local-hour guard sends only at:
+  - `MORNING_HOUR_LOCAL` (default `9`)
+  - `EVENING_HOUR_LOCAL` (default `19`)
+- Timezone from `TIMEZONE` (default `America/Los_Angeles`)
+- This keeps scheduling DST-safe.
+
+Important:
+- Keep scheduled workflow in `APP_MODE=digest`.
+- Do not run long-lived bot in GitHub Actions schedules.
+
+## Syncing GitHub Actions Secrets/Variables
+
+Use script:
+
+```bash
+./scripts/sync_github_actions_from_env.sh
+```
+
+Or target a specific repo:
+
+```bash
+./scripts/sync_github_actions_from_env.sh owner/repo .env
+```
+
+Script only syncs allowlisted keys from `.env`:
+- secrets via `gh secret set`
+- variables via `gh variable set`
+
+## Run Bot 24/7 Locally (PM2)
 
 Install PM2:
 
@@ -74,7 +224,7 @@ Install PM2:
 npm install -g pm2
 ```
 
-Start bot with environment from your shell / `.env`:
+Start:
 
 ```bash
 cd /Users/saarang/Documents/Personal/notion-digest
@@ -88,9 +238,7 @@ pm2 save
 pm2 startup
 ```
 
-`pm2 startup` prints a command. Run that one-time command.
-
-Useful PM2 commands:
+Use:
 
 ```bash
 pm2 status
@@ -101,39 +249,28 @@ pm2 delete notion-bot
 pm2 save
 ```
 
-## Webhook Setup (Transition-Compatible)
+## Common Troubleshooting
 
-Webhook path still works unchanged.
+### `DiscordAPIError[50001]: Missing Access`
 
-- `NOTIFIER=discord` + `DISCORD_WEBHOOK_URL=...`
-- or `NOTIFIER=slack` + `SLACK_WEBHOOK_URL=...`
+Bot is not properly invited or wrong guild ID.
+- Invite with scopes: `bot`, `applications.commands`
+- Set correct `DISCORD_GUILD_ID`
 
-Run webhook digest:
+### `DiscordAPIError[10062]: Unknown interaction`
 
-```bash
-npm run digest
-npm run morning
-npm run evening
-```
+Interaction timed out or stale token. Restart bot and retry action flow.
 
-## Suggested Migration
+### AI section missing
 
-1. Keep existing schedule using `APP_MODE=digest`
-2. Start bot separately with `APP_MODE=bot`
-3. Use bot evening actions for a few days
-4. Optionally move to `APP_MODE=both` where needed
+Check:
+- `ENABLE_AI_SUMMARY=1`
+- valid `GEMINI_API_KEY`
+- model/quotas not failing (`Gemini ... skipped` logs)
 
-## New Environment Variables
+### No Discord message after dry-run command
 
-- `APP_MODE=digest`
-- `DISCORD_BOT_TOKEN=`
-- `DISCORD_APP_ID=`
-- `DISCORD_GUILD_ID=`
-- `DISCORD_BOT_STATE_PATH=logs/discord-bot-state.json`
-- `DISCORD_INTERACTION_TTL_MINUTES=30`
-- `DISCORD_MAX_ACTION_TASKS=10`
-
-Existing env vars stay the same, including Notion schema vars and webhook vars.
+Expected if running digest dry-run: output is logged, not posted.
 
 ## Tests
 
@@ -141,9 +278,8 @@ Existing env vars stay the same, including Notion schema vars and webhook vars.
 npm test
 ```
 
-Current tests cover core action handler logic for:
-
-- done
-- reschedule
-- defer
-- pending action TTL creation
+Current test coverage includes:
+- done action mapping
+- reschedule action mapping
+- defer action mapping
+- pending-action TTL creation

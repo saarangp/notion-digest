@@ -451,12 +451,41 @@ function buildDigestEmbed(digest, titlePrefix) {
     });
   }
 
-  if (digest.aiSummary) {
+  if (digest.aiSummary && !digest.aiPlan) {
     fields.push({
       name: "AI Note",
       value: truncate(digest.aiSummary, 180),
       inline: false,
     });
+  }
+
+  if (digest.aiPlan) {
+    fields.push({
+      name: "Suggested Order",
+      value: truncate(
+        digest.aiPlan.order
+          .map((entry, index) => `${index + 1}. ${entry.task}`)
+          .join("\n"),
+        900,
+      ),
+      inline: false,
+    });
+
+    if (digest.aiPlan.startNow) {
+      fields.push({
+        name: "Start Now (90m)",
+        value: truncate(digest.aiPlan.startNow, 180),
+        inline: false,
+      });
+    }
+
+    if (digest.aiPlan.ifConstrained) {
+      fields.push({
+        name: "If Constrained",
+        value: truncate(digest.aiPlan.ifConstrained, 180),
+        inline: false,
+      });
+    }
   }
 
   return new EmbedBuilder()

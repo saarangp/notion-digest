@@ -11,6 +11,39 @@ const {
 const { log } = require("./logger");
 
 const notion = new Client({ auth: config.notionApiKey });
+const GEMINI_SUMMARY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["s"],
+  properties: {
+    s: {
+      type: "string",
+      description: "Single concise summary sentence (<=120 chars).",
+    },
+  },
+};
+
+const GEMINI_PLAN_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["order", "start_now", "if_constrained"],
+  properties: {
+    order: {
+      type: "array",
+      minItems: 2,
+      maxItems: 5,
+      items: { type: "string" },
+    },
+    start_now: {
+      type: "string",
+      description: "First focused block suggestion (<=120 chars).",
+    },
+    if_constrained: {
+      type: "string",
+      description: "Single fallback if the day gets constrained (<=120 chars).",
+    },
+  },
+};
 
 async function runDigest(mode) {
   const digest = await computeDigest(mode);
@@ -43,6 +76,15 @@ async function computeDigest(mode) {
     tasks: ranked,
     todayIso,
   });
+  const aiPlan =
+    mode === MODE_EVENING
+      ? null
+      : await maybeGenerateGeminiPlan({
+          tasks: ranked,
+          top3,
+          capacity,
+          todayIso,
+        });
 
   const text = buildDigestText({
     mode,
@@ -52,6 +94,7 @@ async function computeDigest(mode) {
     capacity,
     suggestedDefer,
     aiSummary,
+    aiPlan,
     eveningProgress,
   });
 
@@ -63,6 +106,7 @@ async function computeDigest(mode) {
     capacity,
     suggestedDefer,
     aiSummary,
+    aiPlan,
     eveningProgress,
     text,
   };
@@ -477,6 +521,7 @@ function buildDigestText({
   capacity,
   suggestedDefer,
   aiSummary,
+  aiPlan,
   eveningProgress,
 }) {
   const lines = [];
@@ -536,9 +581,27 @@ function buildDigestText({
     addLine(formatTaskCompact(suggestedDefer, todayIso));
   }
 
-  if (aiSummary) {
+  if (aiSummary && !aiPlan) {
     addLine("AI Note");
     addLine(aiSummary);
+  }
+
+  if (aiPlan) {
+    addLine("Suggested Order");
+    for (let i = 0; i < aiPlan.order.length; i += 1) {
+      const entry = aiPlan.order[i];
+      addLine(`${i + 1}. ${entry.task}`);
+    }
+
+    if (aiPlan.startNow) {
+      addLine("Start Now (90m)");
+      addLine(aiPlan.startNow);
+    }
+
+    if (aiPlan.ifConstrained) {
+      addLine("If Constrained");
+      addLine(aiPlan.ifConstrained);
+    }
   }
 
   return lines.join("\n");
@@ -643,16 +706,23 @@ async function maybeGenerateGeminiSummary({ tasks, todayIso }) {
   const aiEnd = addDaysIso(todayIso, config.aiSummaryWindowDays);
   const scoped = tasks
     .filter((task) => task.dueIso <= aiEnd)
-    .slice(0, config.aiSummaryMaxTasks)
-    .map((task) => ({ t: truncate(task.title, 70), d: task.dueIso, p: task.priority }));
+    .slice(0, Math.min(6, config.aiSummaryMaxTasks))
+    .map((task) => ({
+      t: truncate(task.title, 58),
+      p: String(task.priority || "").toUpperCase(),
+      d: task.dueIso,
+    }));
 
   if (scoped.length === 0) {
-    return "no immediate blockers";
+    return "";
   }
 
+  const input = { today: todayIso, tasks: scoped };
   const prompt =
-    "Return minified JSON only with key s. s must be <=120 chars and concrete.\n" +
-    `tasks=${JSON.stringify(scoped)}`;
+    "Summarize today's most important risk in one concrete sentence. " +
+    "Keep it under 120 chars and avoid filler. Return JSON matching schema.\n" +
+    `input=${JSON.stringify(input)}`;
+  logAiDebug("summary.prompt", prompt);
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     config.geminiModel,
@@ -668,8 +738,9 @@ async function maybeGenerateGeminiSummary({ tasks, todayIso }) {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 80,
+        maxOutputTokens: 120,
         responseMimeType: "application/json",
+        responseJsonSchema: GEMINI_SUMMARY_SCHEMA,
       },
     }),
   });
@@ -682,13 +753,188 @@ async function maybeGenerateGeminiSummary({ tasks, todayIso }) {
 
   const payload = await response.json();
   const text = extractGeminiText(payload);
+  logAiDebug("summary.raw", text);
+  const normalized = normalizeModelJsonText(text);
+  const parsedObject = tryParseJsonObject(normalized);
+
+  if (parsedObject && typeof parsedObject.s === "string") {
+    const summary = sanitizeInlineSummary(parsedObject.s);
+    logAiDebug("summary.parsed", summary);
+    return summary;
+  }
+  return "";
+}
+
+async function maybeGenerateGeminiPlan({ tasks, top3, capacity, todayIso }) {
+  if (!config.enableAiSummary || !config.geminiApiKey) {
+    return null;
+  }
+
+  const scopedTasks = tasks.slice(0, 3).map((task) => ({
+    t: truncate(task.title, 60),
+    p: String(task.priority || "").toUpperCase(),
+    d: duePhrase(dateDiffDays(todayIso, task.dueIso)),
+    sc: Number(formatScore(task.score)),
+  }));
+
+  if (scopedTasks.length === 0) {
+    return null;
+  }
+
+  const payload = {
+    today: todayIso,
+    top3: top3.map((task) => truncate(task.title, 50)),
+    free: capacity.available ? capacity.freeMinutes : null,
+    planned: capacity.requiredMinutes,
+    tasks: scopedTasks,
+  };
+
+  const prompt =
+    "Create a practical execution order for today's work. " +
+    "Output only a JSON object matching the schema. No prose, no markdown.\n" +
+    `input=${JSON.stringify(payload)}`;
+  logAiDebug("plan.prompt", prompt);
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    config.geminiModel,
+  )}:generateContent`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": config.geminiApiKey,
+    },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 420,
+        responseMimeType: "application/json",
+        responseJsonSchema: GEMINI_PLAN_SCHEMA,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    log(`Gemini planner skipped (HTTP ${response.status}): ${body}`);
+    return null;
+  }
+
+  const payloadJson = await response.json();
+  const modelText = extractGeminiText(payloadJson);
+  logAiDebug("plan.meta", summarizeGeminiPayload(payloadJson));
+  logAiDebug("plan.raw", modelText);
+  const normalized = normalizeModelJsonText(modelText);
+  let parsed = tryParseJsonObject(normalized);
+
+  // Some schema-constrained responses return empty text. Retry once without schema.
+  if (!parsed) {
+    const retry = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": config.geminiApiKey,
+      },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 420,
+          responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      }),
+    });
+
+    if (retry.ok) {
+      const retryJson = await retry.json();
+      const retryText = extractGeminiText(retryJson);
+      logAiDebug("plan.retry.meta", summarizeGeminiPayload(retryJson));
+      logAiDebug("plan.retry.raw", retryText);
+      parsed = tryParseJsonObject(normalizeModelJsonText(retryText));
+    } else {
+      const retryBody = await retry.text();
+      log(`Gemini planner retry skipped (HTTP ${retry.status}): ${retryBody}`);
+    }
+  }
+
+  if (!parsed) return null;
+  const plan = sanitizeAiPlan(parsed);
+  logAiDebug("plan.parsed", plan ? JSON.stringify(plan) : "null");
+  return plan;
+}
+
+function sanitizeAiPlan(value) {
+  if (!value || typeof value !== "object") return null;
+
+  const orderRaw = Array.isArray(value.order) ? value.order : [];
+  const order = orderRaw
+    .map((item) => sanitizeInlineSummary(item))
+    .filter(Boolean)
+    .slice(0, 5)
+    .map((task) => ({ task }));
+
+  if (order.length < 2) {
+    return null;
+  }
+
+  return {
+    order,
+    startNow: sanitizeInlineSummary(value.start_now).slice(0, 120),
+    ifConstrained: sanitizeInlineSummary(value.if_constrained).slice(0, 120),
+  };
+}
+
+function normalizeModelJsonText(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+
+  // Remove fenced blocks if present.
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const unfenced = fenced ? fenced[1].trim() : raw;
+  return unfenced.trim();
+}
+
+function tryParseJsonObject(text) {
+  if (!text) return null;
 
   try {
     const parsed = JSON.parse(text);
-    return sanitizeInlineSummary(parsed.s);
+    return parsed && typeof parsed === "object" ? parsed : null;
   } catch {
-    return sanitizeInlineSummary(text);
+    // Some model outputs include prose before/after JSON; parse first object block.
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+
+    const candidate = text.slice(start, end + 1);
+    try {
+      const parsed = JSON.parse(candidate);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
   }
+}
+
+function logAiDebug(label, value) {
+  if (!config.dryRun) return;
+  log(`AI_DEBUG ${label}: ${truncate(String(value || ""), 1200)}`);
+}
+
+function summarizeGeminiPayload(payload) {
+  const candidate = Array.isArray(payload?.candidates) ? payload.candidates[0] : null;
+  const finishReason = candidate?.finishReason || "";
+  const blockReason = payload?.promptFeedback?.blockReason || "";
+  const parts = candidate?.content?.parts;
+  const partKeys =
+    Array.isArray(parts) && parts.length > 0
+      ? Object.keys(parts[0] || {}).join(",")
+      : "";
+  return JSON.stringify({ finishReason, blockReason, partKeys });
 }
 
 function extractGeminiText(payload) {
