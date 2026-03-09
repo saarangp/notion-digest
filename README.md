@@ -61,12 +61,17 @@ DRY_RUN=1 MODE=morning node src/index.js
 - Optional:
   - `WORKDAY_START_HOUR`
   - `WORKDAY_END_HOUR`
+  - `LUNCH_START_HOUR`
+  - `LUNCH_START_MINUTE`
+  - `LUNCH_END_HOUR`
+  - `LUNCH_END_MINUTE`
   - `FOCUS_BUFFER_MINUTES`
   - `PLAN_MIN_BLOCK_MINUTES`
   - `PLAN_MAX_BLOCKS`
   - `PLAN_MAX_PROJECTS`
   - `PLAN_CANDIDATE_LIMIT`
   - `PLANNER_EVENT_PREFIX`
+  - `PLANNER_EVENT_COLOR_ID` (default `11`)
 
 ### Gemini (optional but recommended for planner quality)
 
@@ -81,6 +86,11 @@ DRY_RUN=1 MODE=morning node src/index.js
 
 - `PLANNING_HORIZON_DAYS` (default `14`)
 - `FUTURE_RISK_DAILY_MINUTES_THRESHOLD` (default `60`)
+- `URGENT_LOAD_DAYS` (default `3`)
+- `URGENT_LOAD_MIN_DAILY_MINUTES` (default `120`)
+- `URGENT_LOAD_BOOST` (default `0.25`)
+- `URGENT_LOAD_HEAVY_MINUTES` (default `180`)
+- `URGENT_LOAD_HEAVY_BOOST` (default `0.45`)
 
 ## Running Locally
 

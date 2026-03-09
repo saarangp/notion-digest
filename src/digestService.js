@@ -421,6 +421,7 @@ function scoreTask(task) {
   if (task.isOverdue) {
     score += config.overdueBoost;
   }
+  score += getUrgentLoadBoost(task);
 
   return {
     ...task,
@@ -871,7 +872,23 @@ function scorePlanningCandidate(task) {
   const dueScore = 1 / (Math.max(task.dueInDays, 0) + 1);
   const loadScore = Math.min(1, task.requiredDailyMinutes / 180);
   const riskBoost = task.isFutureLoadRisk ? 0.25 : 0;
-  return dueScore * 0.45 + loadScore * 0.35 + priorityScore * 0.2 + riskBoost;
+  return dueScore * 0.45 + loadScore * 0.35 + priorityScore * 0.2 + riskBoost + getUrgentLoadBoost(task);
+}
+
+function getUrgentLoadBoost(task) {
+  const priority = String(task?.priority || "").trim().toLowerCase();
+  if (priority !== "p0") return 0;
+  if (!Number.isFinite(task?.dueInDays) || task.dueInDays < 0 || task.dueInDays > config.urgentLoadDays) {
+    return 0;
+  }
+  const dailyMinutes = Number(task?.requiredDailyMinutes || 0);
+  if (dailyMinutes >= config.urgentLoadHeavyMinutes) {
+    return config.urgentLoadHeavyBoost;
+  }
+  if (dailyMinutes >= config.urgentLoadMinDailyMinutes) {
+    return config.urgentLoadBoost;
+  }
+  return 0;
 }
 
 async function buildMorningDecisionSupport({ ranked, todayIso, capacity }) {
@@ -1069,6 +1086,19 @@ function computeFreeSlots(events, workWindow, minBlockMinutes) {
     }
   }
 
+  const lunchInterval = getLunchInterval(workWindow.start, config.timezone);
+  if (lunchInterval) {
+    const clippedLunchStart = new Date(
+      Math.max(lunchInterval.start.getTime(), workWindow.start.getTime()),
+    );
+    const clippedLunchEnd = new Date(
+      Math.min(lunchInterval.end.getTime(), workWindow.end.getTime()),
+    );
+    if (clippedLunchEnd > clippedLunchStart) {
+      busyIntervals.push({ start: clippedLunchStart, end: clippedLunchEnd });
+    }
+  }
+
   busyIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
   const merged = [];
   for (const interval of busyIntervals) {
@@ -1104,6 +1134,29 @@ function computeFreeSlots(events, workWindow, minBlockMinutes) {
   }
 
   return slots;
+}
+
+function getLunchInterval(referenceDate, timeZone) {
+  if (!referenceDate || !Number.isFinite(referenceDate.getTime())) return null;
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(referenceDate);
+
+  const map = {};
+  for (const part of parts) {
+    if (part.type !== "literal") map[part.type] = part.value;
+  }
+
+  if (!map.year || !map.month || !map.day) return null;
+  const isoDate = `${map.year}-${map.month}-${map.day}`;
+  const start = zonedDateTimeToUtc(isoDate, config.lunchStartHour, config.lunchStartMinute, timeZone);
+  const end = zonedDateTimeToUtc(isoDate, config.lunchEndHour, config.lunchEndMinute, timeZone);
+  if (end <= start) return null;
+  return { start, end };
 }
 
 function reserveFocusBuffer(slots, bufferMinutes, minBlockMinutes) {
@@ -1412,6 +1465,7 @@ async function createPlannerEvents(calendar, todayIso, blocks) {
         ].join("\n"),
         start: { dateTime: block.start.toISOString() },
         end: { dateTime: block.end.toISOString() },
+        colorId: config.plannerEventColorId,
         transparency: "opaque",
         extendedProperties: {
           private: {

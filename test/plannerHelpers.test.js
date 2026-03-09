@@ -61,6 +61,32 @@ test("buildPlanningCandidates includes future-pressure later tasks", () => {
   assert.equal(candidates[0].id, "overdue");
 });
 
+test("buildPlanningCandidates boosts heavy near-term p0 tasks", () => {
+  const ranked = [
+    {
+      id: "heavy-p0",
+      bucket: "due_soon",
+      isFutureLoadRisk: false,
+      dueInDays: 2,
+      requiredDailyMinutes: 210,
+      priority: "p0",
+      dueIso: "2026-03-11",
+    },
+    {
+      id: "light-p1",
+      bucket: "due_soon",
+      isFutureLoadRisk: false,
+      dueInDays: 2,
+      requiredDailyMinutes: 45,
+      priority: "p1",
+      dueIso: "2026-03-11",
+    },
+  ];
+
+  const candidates = buildPlanningCandidates(ranked);
+  assert.equal(candidates[0].id, "heavy-p0");
+});
+
 test("computeFreeSlots and reserveFocusBuffer produce usable slots", () => {
   const workWindow = {
     start: new Date("2026-03-09T09:00:00.000Z"),
@@ -83,6 +109,22 @@ test("computeFreeSlots and reserveFocusBuffer produce usable slots", () => {
 
   const buffered = reserveFocusBuffer(slots, 60, 30);
   assert.deepEqual(buffered.map((slot) => slot.minutes), [60, 120, 180]);
+});
+
+test("computeFreeSlots excludes lunch window", () => {
+  const workWindow = {
+    // 09:00-16:00 America/Los_Angeles on 2026-03-09 (UTC-7)
+    start: new Date("2026-03-09T16:00:00.000Z"),
+    end: new Date("2026-03-09T23:00:00.000Z"),
+  };
+
+  const slots = computeFreeSlots([], workWindow, 30);
+  // Lunch is 12:00-13:00 local => 19:00-20:00 UTC on this date.
+  assert.deepEqual(slots.map((slot) => slot.minutes), [180, 180]);
+  assert.equal(slots[0].start.toISOString(), "2026-03-09T16:00:00.000Z");
+  assert.equal(slots[0].end.toISOString(), "2026-03-09T19:00:00.000Z");
+  assert.equal(slots[1].start.toISOString(), "2026-03-09T20:00:00.000Z");
+  assert.equal(slots[1].end.toISOString(), "2026-03-09T23:00:00.000Z");
 });
 
 test("buildProjectPlans groups tasks and computes triage-minute demand", () => {
