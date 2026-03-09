@@ -57,7 +57,9 @@ DRY_RUN=1 MODE=morning node src/index.js
 
 - `GOOGLE_CLIENT_EMAIL`
 - `GOOGLE_PRIVATE_KEY`
-- `GOOGLE_CALENDAR_ID`
+- `GOOGLE_CALENDAR_ID` (legacy fallback for both read/write)
+- `GOOGLE_SOURCE_CALENDAR_ID` (recommended source calendar for meeting reads)
+- `GOOGLE_PLANNER_CALENDAR_ID` (recommended destination calendar for focus-block writes)
 - Optional:
   - `WORKDAY_START_HOUR`
   - `WORKDAY_END_HOUR`
@@ -118,15 +120,15 @@ This keeps behavior DST-safe without hard-coding UTC offsets.
 
 Morning planner:
 
-1. Reads today's calendar events
-2. Removes previously generated planner blocks for today
+1. Reads today's source calendar events
+2. Removes previously generated planner blocks for today (planner calendar)
 3. Computes free slots inside workday window
 4. Reserves `FOCUS_BUFFER_MINUTES`
 5. Builds candidates from overdue, due-today, due-soon, and high-pressure future tasks
 6. Produces a Morning Decision section: `Must / Move / Start` (Gemini IDs + deterministic fallback)
 7. Converts task triage into project demand (`triage score -> 30m units per task`)
 8. Uses Gemini to order project focus sequence (fallback deterministic if Gemini fails)
-9. Creates grouped busy project blocks in Google Calendar with task breakdowns
+9. Creates grouped busy project blocks in planner calendar with task breakdowns
 
 ## Evening Rollover Behavior
 
@@ -155,7 +157,7 @@ Or target a specific repo:
 
 ### Planner skipped
 
-Check calendar env vars and service account permissions on `GOOGLE_CALENDAR_ID`.
+Check calendar env vars and service account permissions on source/planner calendar IDs.
 
 ### No webhook message in dry run
 

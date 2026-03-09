@@ -521,7 +521,12 @@ async function getCapacity(top3, todayIso) {
 }
 
 function hasCalendarConfig() {
-  return !!(config.googleClientEmail && config.googlePrivateKey && config.googleCalendarId);
+  return !!(
+    config.googleClientEmail &&
+    config.googlePrivateKey &&
+    config.googleSourceCalendarId &&
+    config.googlePlannerCalendarId
+  );
 }
 
 async function getCalendarClient() {
@@ -543,14 +548,14 @@ async function getCalendarClient() {
   return google.calendar({ version: "v3", auth });
 }
 
-async function fetchTodayCalendarEvents(todayIso, calendar = null) {
+async function fetchTodayCalendarEvents(todayIso, calendar = null, calendarId = config.googleSourceCalendarId) {
   const calendarClient = calendar || (await getCalendarClient());
 
   const dayStart = zonedDateTimeToUtc(todayIso, 0, 0, config.timezone);
   const dayEnd = zonedDateTimeToUtc(addDaysIso(todayIso, 1), 0, 0, config.timezone);
 
   const response = await calendarClient.events.list({
-    calendarId: config.googleCalendarId,
+    calendarId,
     timeMin: dayStart.toISOString(),
     timeMax: dayEnd.toISOString(),
     singleEvents: true,
@@ -643,10 +648,17 @@ async function runMorningBlockPlanner(todayIso, ranked) {
   }
 
   const calendar = await getCalendarClient();
-  const events = await fetchTodayCalendarEvents(todayIso, calendar);
-  const managedEvents = events.filter((event) => isManagedPlannerEvent(event));
+  const sourceEvents = await fetchTodayCalendarEvents(todayIso, calendar, config.googleSourceCalendarId);
+  const plannerEvents =
+    config.googlePlannerCalendarId === config.googleSourceCalendarId
+      ? sourceEvents
+      : await fetchTodayCalendarEvents(todayIso, calendar, config.googlePlannerCalendarId);
+  const managedEvents = plannerEvents.filter((event) => isManagedPlannerEvent(event));
   const deletedCount = await deleteManagedPlannerEvents(calendar, managedEvents);
-  const busyEvents = events.filter((event) => !isManagedPlannerEvent(event));
+  const busyEvents =
+    config.googlePlannerCalendarId === config.googleSourceCalendarId
+      ? sourceEvents.filter((event) => !isManagedPlannerEvent(event))
+      : sourceEvents;
 
   const workWindow = getWorkWindow(todayIso);
   const rawSlots = computeFreeSlots(busyEvents, workWindow, config.planMinBlockMinutes);
@@ -738,11 +750,18 @@ async function runMiddayReplan(todayIso, ranked) {
   }
 
   const calendar = await getCalendarClient();
-  const events = await fetchTodayCalendarEvents(todayIso, calendar);
-  const managedEvents = events.filter((event) => isManagedPlannerEvent(event));
+  const sourceEvents = await fetchTodayCalendarEvents(todayIso, calendar, config.googleSourceCalendarId);
+  const plannerEvents =
+    config.googlePlannerCalendarId === config.googleSourceCalendarId
+      ? sourceEvents
+      : await fetchTodayCalendarEvents(todayIso, calendar, config.googlePlannerCalendarId);
+  const managedEvents = plannerEvents.filter((event) => isManagedPlannerEvent(event));
   const managedFuture = managedEvents.filter((event) => eventStartsOnOrAfter(event, effectiveStart));
   const deletedCount = await deleteManagedPlannerEvents(calendar, managedFuture);
-  const blockingEvents = events.filter((event) => !isManagedPlannerEvent(event));
+  const blockingEvents =
+    config.googlePlannerCalendarId === config.googleSourceCalendarId
+      ? sourceEvents.filter((event) => !isManagedPlannerEvent(event))
+      : sourceEvents;
 
   const rawSlots = computeFreeSlots(blockingEvents, { start: effectiveStart, end: workWindow.end }, config.planMinBlockMinutes);
   const usableSlots = reserveFocusBuffer(rawSlots, config.focusBufferMinutes, config.planMinBlockMinutes).map(
@@ -1429,7 +1448,7 @@ async function deleteManagedPlannerEvents(calendar, events) {
   for (const event of events) {
     if (!event?.id) continue;
     await calendar.events.delete({
-      calendarId: config.googleCalendarId,
+      calendarId: config.googlePlannerCalendarId,
       eventId: event.id,
     });
   }
@@ -1451,7 +1470,7 @@ async function createPlannerEvents(calendar, todayIso, blocks) {
   let created = 0;
   for (const block of blocks) {
     await calendar.events.insert({
-      calendarId: config.googleCalendarId,
+      calendarId: config.googlePlannerCalendarId,
       requestBody: {
         summary: `${config.plannerEventPrefix}: ${truncate(block.project, 32)}`,
         description: [

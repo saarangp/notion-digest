@@ -71,6 +71,9 @@ const config = {
   googleClientEmail: process.env.GOOGLE_CLIENT_EMAIL || "",
   googlePrivateKey: process.env.GOOGLE_PRIVATE_KEY || "",
   googleCalendarId: process.env.GOOGLE_CALENDAR_ID || "",
+  googleSourceCalendarId: process.env.GOOGLE_SOURCE_CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || "",
+  googlePlannerCalendarId:
+    process.env.GOOGLE_PLANNER_CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || "",
   workdayStartHour: parseInteger(process.env.WORKDAY_START_HOUR, 9),
   workdayEndHour: parseInteger(process.env.WORKDAY_END_HOUR, 18),
   lunchStartHour: parseInteger(process.env.LUNCH_START_HOUR, 12),
