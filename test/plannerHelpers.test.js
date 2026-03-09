@@ -6,6 +6,7 @@ const {
   buildPlanningCandidates,
   buildProjectPlans,
   buildProjectBlocks,
+  buildOneOffProjectPlan,
   buildDeterministicMorningDecisionIds,
   computeFreeSlots,
   reserveFocusBuffer,
@@ -228,4 +229,56 @@ test("buildDeterministicMorningDecisionIds prioritizes must and picks safe moves
   assert.deepEqual(decisions.mustIds, ["a", "b"]);
   assert.deepEqual(decisions.moveIds, ["d", "e"]);
   assert.equal(decisions.startNowId, "a");
+});
+
+test("buildOneOffProjectPlan reserves urgent one-off tasks outside dominant projects", () => {
+  const tasks = [
+    {
+      id: "a1",
+      title: "Alpha deep work",
+      project: "Alpha",
+      bucket: "due_today",
+      score: 1.2,
+      planningScore: 1.1,
+      dueIso: "2026-03-09",
+    },
+    {
+      id: "b1",
+      title: "Beta quick one-off",
+      project: "Beta",
+      bucket: "due_today",
+      score: 1.0,
+      planningScore: 0.9,
+      dueIso: "2026-03-09",
+    },
+    {
+      id: "c1",
+      title: "Gamma one-off",
+      project: "Gamma",
+      bucket: "overdue",
+      score: 1.3,
+      planningScore: 1.0,
+      dueIso: "2026-03-08",
+    },
+  ];
+
+  const orderedProjects = [
+    { projectKey: "alpha", project: "Alpha", demandMinutes: 240, tasks: [] },
+    { projectKey: "delta", project: "Delta", demandMinutes: 120, tasks: [] },
+  ];
+
+  const oneOffPlan = buildOneOffProjectPlan({
+    tasks,
+    orderedProjects,
+    totalSlotMinutes: 300,
+  });
+
+  assert.ok(oneOffPlan);
+  assert.equal(oneOffPlan.projectKey, "__one_off__");
+  assert.equal(oneOffPlan.project, "One-offs");
+  assert.equal(oneOffPlan.demandMinutes >= 60, true);
+  assert.deepEqual(
+    oneOffPlan.tasks.map((item) => item.task.id).sort(),
+    ["b1", "c1"],
+  );
 });

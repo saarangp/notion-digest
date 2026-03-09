@@ -93,6 +93,9 @@ DRY_RUN=1 MODE=morning node src/index.js
 - `URGENT_LOAD_BOOST` (default `0.25`)
 - `URGENT_LOAD_HEAVY_MINUTES` (default `180`)
 - `URGENT_LOAD_HEAVY_BOOST` (default `0.45`)
+- `ONE_OFF_MINUTES` (default `60`)
+- `ONE_OFF_MAX_TASKS` (default `2`)
+- `ONE_OFF_SHARE` (default `0.2`)
 
 ## Running Locally
 
@@ -127,8 +130,9 @@ Morning planner:
 5. Builds candidates from overdue, due-today, due-soon, and high-pressure future tasks
 6. Produces a Morning Decision section: `Must / Move / Start` (Gemini IDs + deterministic fallback)
 7. Converts task triage into project demand (`triage score -> 30m units per task`)
-8. Uses Gemini to order project focus sequence (fallback deterministic if Gemini fails)
-9. Creates grouped busy project blocks in planner calendar with task breakdowns
+8. Reserves a dedicated one-off lane for urgent non-dominant-project tasks
+9. Uses Gemini to order project focus sequence (fallback deterministic if Gemini fails)
+10. Creates grouped busy project blocks in planner calendar with task breakdowns
 
 ## Evening Rollover Behavior
 

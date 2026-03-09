@@ -689,9 +689,14 @@ async function runMorningBlockPlanner(todayIso, ranked) {
     projects: projectPlans,
   });
   const orderedProjects = applyProjectOrder(projectPlans, geminiOrder);
+  const projectsForBlocks = buildProjectsForPlanning({
+    candidates,
+    orderedProjects,
+    slots: usableSlots,
+  });
   const blocks = buildProjectBlocks({
     slots: usableSlots,
-    projects: orderedProjects,
+    projects: projectsForBlocks,
     maxBlocks: config.planMaxBlocks,
     minBlockMinutes: config.planMinBlockMinutes,
   });
@@ -790,9 +795,14 @@ async function runMiddayReplan(todayIso, ranked) {
     projects: projectPlans,
   });
   const orderedProjects = applyProjectOrder(projectPlans, geminiOrder);
+  const projectsForBlocks = buildProjectsForPlanning({
+    candidates,
+    orderedProjects,
+    slots: usableSlots,
+  });
   const blocks = buildProjectBlocks({
     slots: usableSlots,
-    projects: orderedProjects,
+    projects: projectsForBlocks,
     maxBlocks: config.planMaxBlocks,
     minBlockMinutes: config.planMinBlockMinutes,
   });
@@ -1350,6 +1360,135 @@ function applyProjectOrder(projects, projectOrder) {
   }
 
   return ordered;
+}
+
+function buildProjectsForPlanning({ candidates, orderedProjects, slots }) {
+  const totalSlotMinutes = getTotalSlotMinutes(slots);
+  const oneOffPlan = buildOneOffProjectPlan({
+    tasks: candidates,
+    orderedProjects,
+    totalSlotMinutes,
+  });
+  if (!oneOffPlan) {
+    return orderedProjects.filter((project) => project.demandMinutes >= config.planMinBlockMinutes);
+  }
+
+  const adjustedProjects = reserveOneOffMinutesInProjects(orderedProjects, oneOffPlan);
+  return [oneOffPlan, ...adjustedProjects].filter(
+    (project) => project.demandMinutes >= config.planMinBlockMinutes,
+  );
+}
+
+function getTotalSlotMinutes(slots) {
+  return (slots || []).reduce((sum, slot) => sum + Math.max(0, Number(slot?.minutes || 0)), 0);
+}
+
+function buildOneOffProjectPlan({ tasks, orderedProjects, totalSlotMinutes }) {
+  if (!Array.isArray(tasks) || tasks.length === 0 || totalSlotMinutes < config.planMinBlockMinutes) {
+    return null;
+  }
+
+  const dominantProjectKeys = new Set(
+    (orderedProjects || []).slice(0, 2).map((project) => project.projectKey),
+  );
+  const primaryCandidates = tasks.filter(
+    (task) =>
+      (task.bucket === BUCKETS.OVERDUE || task.bucket === BUCKETS.DUE_TODAY) &&
+      !dominantProjectKeys.has(String(task.project || "").trim().toLowerCase()),
+  );
+  const fallbackCandidates = tasks.filter(
+    (task) =>
+      task.bucket === BUCKETS.DUE_SOON &&
+      !dominantProjectKeys.has(String(task.project || "").trim().toLowerCase()),
+  );
+  const pool = (primaryCandidates.length > 0 ? primaryCandidates : fallbackCandidates).sort((a, b) => {
+    if (a.bucket !== b.bucket) {
+      const order = {
+        [BUCKETS.OVERDUE]: 0,
+        [BUCKETS.DUE_TODAY]: 1,
+        [BUCKETS.DUE_SOON]: 2,
+      };
+      return (order[a.bucket] ?? 9) - (order[b.bucket] ?? 9);
+    }
+    if (a.score !== b.score) return b.score - a.score;
+    return a.dueIso.localeCompare(b.dueIso);
+  });
+  const selected = pool.slice(0, Math.max(1, config.oneOffMaxTasks));
+  if (selected.length === 0) return null;
+
+  const byShare = Math.round(totalSlotMinutes * Math.max(0, config.oneOffShare));
+  const targetMinutes = Math.min(
+    totalSlotMinutes,
+    Math.max(config.planMinBlockMinutes, config.oneOffMinutes, byShare),
+  );
+  const allocation = allocateMinutesAcrossTasks(selected, targetMinutes);
+  const demandMinutes = allocation.reduce((sum, item) => sum + item.minutes, 0);
+  if (demandMinutes < config.planMinBlockMinutes) return null;
+
+  return {
+    projectKey: "__one_off__",
+    project: "One-offs",
+    tasks: allocation.map((item) => ({
+      task: item.task,
+      triageMinutes: item.minutes,
+      remainingMinutes: item.minutes,
+    })),
+    demandMinutes,
+    pressureScore: allocation.reduce((sum, item) => sum + (item.task.planningScore || 0), 0),
+    firstDue: allocation[0]?.task?.dueIso || "9999-12-31",
+    urgentCount: allocation.length,
+  };
+}
+
+function allocateMinutesAcrossTasks(tasks, totalMinutes) {
+  if (!Array.isArray(tasks) || tasks.length === 0 || totalMinutes <= 0) return [];
+  const sorted = [...tasks].sort((a, b) => {
+    if (a.bucket !== b.bucket) {
+      const order = { [BUCKETS.OVERDUE]: 0, [BUCKETS.DUE_TODAY]: 1, [BUCKETS.DUE_SOON]: 2 };
+      return (order[a.bucket] ?? 9) - (order[b.bucket] ?? 9);
+    }
+    if (a.score !== b.score) return b.score - a.score;
+    return a.title.localeCompare(b.title);
+  });
+
+  const allocations = [];
+  let remaining = totalMinutes;
+  for (let i = 0; i < sorted.length; i += 1) {
+    const task = sorted[i];
+    const slotsLeft = sorted.length - i;
+    const chunk = i === sorted.length - 1 ? remaining : Math.max(30, Math.floor(remaining / slotsLeft));
+    const minutes = Math.min(remaining, chunk);
+    if (minutes <= 0) continue;
+    allocations.push({ task, minutes });
+    remaining -= minutes;
+    if (remaining <= 0) break;
+  }
+
+  return allocations;
+}
+
+function reserveOneOffMinutesInProjects(projects, oneOffPlan) {
+  if (!oneOffPlan || !Array.isArray(oneOffPlan.tasks) || oneOffPlan.tasks.length === 0) return projects;
+
+  const reservedByTaskId = new Map(
+    oneOffPlan.tasks.map((item) => [item.task.id, Number(item.remainingMinutes || 0)]),
+  );
+
+  return (projects || [])
+    .map((project) => {
+      const tasks = (project.tasks || []).map((item) => {
+        const reserved = reservedByTaskId.get(item.task.id) || 0;
+        const remainingMinutes = Math.max(0, Number(item.remainingMinutes || 0) - reserved);
+        return {
+          ...item,
+          remainingMinutes,
+          triageMinutes: Math.max(0, Number(item.triageMinutes || 0) - reserved),
+        };
+      });
+      const demandMinutes = tasks.reduce((sum, item) => sum + Number(item.remainingMinutes || 0), 0);
+      return { ...project, tasks, demandMinutes };
+    })
+    .filter((project) => project.demandMinutes > 0);
 }
 
 function buildProjectBlocks({ slots, projects, maxBlocks, minBlockMinutes }) {
@@ -2166,6 +2305,7 @@ module.exports = {
   buildPlanningCandidates,
   buildProjectPlans,
   buildProjectBlocks,
+  buildOneOffProjectPlan,
   buildDeterministicMorningDecisionIds,
   computeFreeSlots,
   reserveFocusBuffer,
