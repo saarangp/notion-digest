@@ -5,6 +5,7 @@ const {
   normalizeMode,
   validateConfig,
   MODE_MORNING,
+  MODE_MIDDAY,
   MODE_EVENING,
   MODE_BOTH,
 } = require("./config");
@@ -18,6 +19,10 @@ async function main() {
   if (!config.enforceLocalHour) {
     if (mode === MODE_MORNING || mode === MODE_BOTH) {
       await runDigest(MODE_MORNING);
+    }
+
+    if (mode === MODE_MIDDAY) {
+      await runDigest(MODE_MIDDAY);
     }
 
     if (mode === MODE_EVENING || mode === MODE_BOTH) {
@@ -50,6 +55,10 @@ async function main() {
 
   if (mode === MODE_MORNING) {
     await runDigest(MODE_MORNING);
+  }
+
+  if (mode === MODE_MIDDAY) {
+    await runDigest(MODE_MIDDAY);
   }
 
   if (mode === MODE_EVENING) {

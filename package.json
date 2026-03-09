@@ -9,6 +9,7 @@
     "digest": "node src/index.js",
     "both": "MODE=both node src/index.js",
     "morning": "MODE=morning node src/index.js",
+    "midday": "MODE=midday node src/index.js",
     "evening": "MODE=evening node src/index.js",
     "dry-run": "DRY_RUN=1 MODE=morning node src/index.js",
     "test": "node --test"

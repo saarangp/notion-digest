@@ -2,6 +2,7 @@ const path = require("node:path");
 
 const MODE_MORNING = "morning";
 const MODE_EVENING = "evening";
+const MODE_MIDDAY = "midday";
 const MODE_BOTH = "both";
 
 const BUCKETS = {
@@ -84,10 +85,10 @@ const config = {
 
 function normalizeMode(rawMode) {
   const value = String(rawMode || "").trim().toLowerCase();
-  if ([MODE_MORNING, MODE_EVENING, MODE_BOTH].includes(value)) {
+  if ([MODE_MORNING, MODE_EVENING, MODE_MIDDAY, MODE_BOTH].includes(value)) {
     return value;
   }
-  throw new Error(`Invalid MODE \"${rawMode}\". Use morning, evening, or both.`);
+  throw new Error(`Invalid MODE \"${rawMode}\". Use morning, midday, evening, or both.`);
 }
 
 function validateConfig() {
@@ -131,6 +132,7 @@ function parseFloatOrDefault(raw, fallback) {
 module.exports = {
   MODE_MORNING,
   MODE_EVENING,
+  MODE_MIDDAY,
   MODE_BOTH,
   BUCKETS,
   PRIORITY_TO_NUMERIC,

@@ -6,6 +6,7 @@ const {
   buildPlanningCandidates,
   buildProjectPlans,
   buildProjectBlocks,
+  buildDeterministicMorningDecisionIds,
   computeFreeSlots,
   reserveFocusBuffer,
 } = require("../src/digestService");
@@ -164,4 +165,25 @@ test("buildProjectBlocks fills long slots with grouped project blocks", () => {
   assert.equal(blocks[1].project, "Beta");
   assert.equal(blocks[0].start.toISOString(), "2026-03-09T11:00:00.000Z");
   assert.equal(blocks[1].end.toISOString(), "2026-03-09T16:30:00.000Z");
+});
+
+test("buildDeterministicMorningDecisionIds prioritizes must and picks safe moves", () => {
+  const ranked = [
+    { id: "a", bucket: "overdue", score: 1.2, dueInDays: -1, title: "A" },
+    { id: "b", bucket: "due_today", score: 1.1, dueInDays: 0, title: "B" },
+    { id: "c", bucket: "due_soon", score: 0.6, dueInDays: 2, title: "C" },
+    { id: "d", bucket: "later", score: 0.2, dueInDays: 6, title: "D" },
+    { id: "e", bucket: "later", score: 0.3, dueInDays: 5, title: "E" },
+  ];
+  const capacity = {
+    available: true,
+    status: "constrained_day",
+    freeMinutes: 90,
+    requiredMinutes: 180,
+  };
+
+  const decisions = buildDeterministicMorningDecisionIds({ ranked, capacity });
+  assert.deepEqual(decisions.mustIds, ["a", "b"]);
+  assert.deepEqual(decisions.moveIds, ["d", "e"]);
+  assert.equal(decisions.startNowId, "a");
 });

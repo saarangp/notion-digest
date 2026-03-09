@@ -4,6 +4,7 @@ const { Client } = require("@notionhq/client");
 const {
   config,
   MODE_MORNING,
+  MODE_MIDDAY,
   MODE_EVENING,
   BUCKETS,
   PRIORITY_TO_NUMERIC,
@@ -61,11 +62,34 @@ const GEMINI_PROJECT_ORDER_SCHEMA = {
   },
 };
 
+const GEMINI_MORNING_DECISION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["must_ids", "move_ids", "start_now_id"],
+  properties: {
+    must_ids: {
+      type: "array",
+      minItems: 0,
+      maxItems: 4,
+      items: { type: "string", minLength: 1 },
+    },
+    move_ids: {
+      type: "array",
+      minItems: 0,
+      maxItems: 4,
+      items: { type: "string", minLength: 1 },
+    },
+    start_now_id: { type: "string" },
+  },
+};
+
 async function runDigest(mode) {
   const digest = await computeDigest(mode);
   const operations =
     mode === MODE_EVENING
       ? await runEveningAutoRollover(digest.todayIso, digest.ranked)
+      : mode === MODE_MIDDAY
+        ? await runMiddayReplan(digest.todayIso, digest.ranked)
       : mode === MODE_MORNING
         ? await runMorningBlockPlanner(digest.todayIso, digest.ranked)
         : null;
@@ -111,6 +135,14 @@ async function computeDigest(mode) {
           capacity,
           todayIso,
         });
+  const morningDecision =
+    mode === MODE_EVENING
+      ? null
+      : await buildMorningDecisionSupport({
+          ranked,
+          todayIso,
+          capacity,
+        });
 
   const text = buildDigestText({
     mode,
@@ -121,6 +153,7 @@ async function computeDigest(mode) {
     suggestedDefer,
     aiSummary,
     aiPlan,
+    morningDecision,
     eveningProgress,
   });
 
@@ -133,6 +166,7 @@ async function computeDigest(mode) {
     suggestedDefer,
     aiSummary,
     aiPlan,
+    morningDecision,
     eveningProgress,
     text,
   };
@@ -542,6 +576,14 @@ function isSelfDeclined(event) {
   return selfAttendee ? selfAttendee.responseStatus === "declined" : false;
 }
 
+function eventStartsOnOrAfter(event, threshold) {
+  const startDateTime = event?.start?.dateTime;
+  if (!startDateTime) return false;
+  const start = new Date(startDateTime);
+  if (!Number.isFinite(start.getTime())) return false;
+  return start >= threshold;
+}
+
 function pickSuggestedDefer(top3, capacity) {
   if (!capacity.available || capacity.status !== "constrained_day" || top3.length === 0) {
     return null;
@@ -665,6 +707,98 @@ async function runMorningBlockPlanner(todayIso, ranked) {
   };
 }
 
+async function runMiddayReplan(todayIso, ranked) {
+  if (!hasCalendarConfig()) {
+    return {
+      kind: "planner",
+      summary: "Midday replan skipped: Google Calendar is not configured.",
+      preview: [],
+    };
+  }
+
+  const candidates = buildPlanningCandidates(ranked);
+  if (candidates.length === 0) {
+    return {
+      kind: "planner",
+      summary: "Midday replan skipped: no actionable tasks.",
+      preview: [],
+    };
+  }
+
+  const workWindow = getWorkWindow(todayIso);
+  const replanStart = getCurrentTimeInTimezone(config.timezone);
+  const effectiveStart = replanStart > workWindow.start ? replanStart : workWindow.start;
+  if (effectiveStart >= workWindow.end) {
+    return {
+      kind: "planner",
+      summary: "Midday replan skipped: no remaining work window today.",
+      preview: [],
+    };
+  }
+
+  const calendar = await getCalendarClient();
+  const events = await fetchTodayCalendarEvents(todayIso, calendar);
+  const managedEvents = events.filter((event) => isManagedPlannerEvent(event));
+  const managedFuture = managedEvents.filter((event) => eventStartsOnOrAfter(event, effectiveStart));
+  const deletedCount = await deleteManagedPlannerEvents(calendar, managedFuture);
+  const blockingEvents = events.filter((event) => !isManagedPlannerEvent(event));
+
+  const rawSlots = computeFreeSlots(blockingEvents, { start: effectiveStart, end: workWindow.end }, config.planMinBlockMinutes);
+  const usableSlots = reserveFocusBuffer(rawSlots, config.focusBufferMinutes, config.planMinBlockMinutes).map(
+    (slot, index) => ({ ...slot, index }),
+  );
+  if (usableSlots.length === 0) {
+    return {
+      kind: "planner",
+      summary: "Midday replan skipped: no remaining free slots after constraints.",
+      preview: [],
+    };
+  }
+
+  const projectPlans = buildProjectPlans(candidates).slice(0, Math.max(1, config.planMaxProjects || 3));
+  if (projectPlans.length === 0) {
+    return {
+      kind: "planner",
+      summary: "Midday replan skipped: no project candidates.",
+      preview: [],
+    };
+  }
+
+  const geminiOrder = await maybeGenerateGeminiProjectOrder({
+    todayIso,
+    slots: usableSlots,
+    projects: projectPlans,
+  });
+  const orderedProjects = applyProjectOrder(projectPlans, geminiOrder);
+  const blocks = buildProjectBlocks({
+    slots: usableSlots,
+    projects: orderedProjects,
+    maxBlocks: config.planMaxBlocks,
+    minBlockMinutes: config.planMinBlockMinutes,
+  });
+  if (blocks.length === 0) {
+    return {
+      kind: "planner",
+      summary: "Midday replan skipped: unable to allocate remaining slots.",
+      preview: [],
+    };
+  }
+
+  const createdCount = await createPlannerEvents(calendar, todayIso, blocks);
+  return {
+    kind: "planner",
+    summary:
+      `Midday replan created ${createdCount} busy project block(s)` +
+      ` (cleared ${deletedCount} future tool block(s)).`,
+    preview: blocks.slice(0, 4).map((block) => ({
+      start: block.start,
+      end: block.end,
+      project: block.project,
+      title: block.taskTitles.slice(0, 2).join(", ") || "Project work",
+    })),
+  };
+}
+
 async function runEveningAutoRollover(todayIso, ranked) {
   const rolloverCandidates = ranked.filter(
     (task) => task.bucket === BUCKETS.OVERDUE || task.bucket === BUCKETS.DUE_TODAY,
@@ -738,6 +872,182 @@ function scorePlanningCandidate(task) {
   const loadScore = Math.min(1, task.requiredDailyMinutes / 180);
   const riskBoost = task.isFutureLoadRisk ? 0.25 : 0;
   return dueScore * 0.45 + loadScore * 0.35 + priorityScore * 0.2 + riskBoost;
+}
+
+async function buildMorningDecisionSupport({ ranked, todayIso, capacity }) {
+  if (!Array.isArray(ranked) || ranked.length === 0) return null;
+
+  const fallbackIds = buildDeterministicMorningDecisionIds({ ranked, capacity });
+  let chosenIds = fallbackIds;
+  let source = "fallback";
+
+  const geminiIds = await maybeGenerateGeminiMorningDecisionIds({
+    ranked,
+    todayIso,
+    capacity,
+  });
+  if (geminiIds) {
+    chosenIds = mergeMorningDecisionIds(fallbackIds, geminiIds);
+    source = "gemini";
+  }
+
+  const byId = new Map(ranked.map((task) => [task.id, task]));
+  const must = chosenIds.mustIds.map((id) => byId.get(id)).filter(Boolean);
+  const move = chosenIds.moveIds.map((id) => byId.get(id)).filter(Boolean);
+  const startNow = chosenIds.startNowId ? byId.get(chosenIds.startNowId) || null : null;
+
+  return { must, move, startNow, source };
+}
+
+function buildDeterministicMorningDecisionIds({ ranked, capacity }) {
+  const mustIds = ranked
+    .filter((task) => task.bucket === BUCKETS.OVERDUE || task.bucket === BUCKETS.DUE_TODAY)
+    .slice(0, 3)
+    .map((task) => task.id);
+  if (mustIds.length === 0) {
+    mustIds.push(...ranked.slice(0, 2).map((task) => task.id));
+  }
+
+  const mustSet = new Set(mustIds);
+  const constrained = capacity?.available && capacity?.status === "constrained_day";
+
+  const moveCandidates = ranked
+    .filter((task) => !mustSet.has(task.id))
+    .filter((task) => {
+      if (task.bucket === BUCKETS.LATER) return true;
+      if (task.bucket === BUCKETS.DUE_SOON) return constrained;
+      return false;
+    })
+    .sort((a, b) => {
+      if (a.bucket !== b.bucket) {
+        const order = {
+          [BUCKETS.LATER]: 0,
+          [BUCKETS.DUE_SOON]: 1,
+        };
+        return (order[a.bucket] ?? 9) - (order[b.bucket] ?? 9);
+      }
+      if (a.score !== b.score) return a.score - b.score;
+      if (a.dueInDays !== b.dueInDays) return b.dueInDays - a.dueInDays;
+      return a.title.localeCompare(b.title);
+    });
+
+  const moveIds = moveCandidates.slice(0, 2).map((task) => task.id);
+  const moveSet = new Set(moveIds);
+
+  const startNowId =
+    mustIds.find((id) => !moveSet.has(id)) ||
+    ranked.map((task) => task.id).find((id) => !moveSet.has(id)) ||
+    "";
+
+  return { mustIds, moveIds, startNowId };
+}
+
+function mergeMorningDecisionIds(fallbackIds, geminiIds) {
+  const mustIds = geminiIds.mustIds.length > 0 ? geminiIds.mustIds : fallbackIds.mustIds;
+  const moveIds = geminiIds.moveIds.length > 0 ? geminiIds.moveIds : fallbackIds.moveIds;
+  const moveSet = new Set(moveIds);
+  const startNowId =
+    (!moveSet.has(geminiIds.startNowId) && geminiIds.startNowId) ||
+    (!moveSet.has(fallbackIds.startNowId) && fallbackIds.startNowId) ||
+    mustIds.find((id) => !moveSet.has(id)) ||
+    "";
+
+  return {
+    mustIds,
+    moveIds: moveIds.filter((id) => id !== startNowId),
+    startNowId,
+  };
+}
+
+async function maybeGenerateGeminiMorningDecisionIds({ ranked, todayIso, capacity }) {
+  if (!config.geminiApiKey) return null;
+
+  const candidates = ranked.slice(0, Math.min(14, Math.max(6, config.planCandidateLimit)));
+  const allowedIds = new Set(candidates.map((task) => task.id));
+  const input = {
+    today: todayIso,
+    capacity: capacity?.available
+      ? {
+          free_m: capacity.freeMinutes,
+          required_m: capacity.requiredMinutes,
+          status: capacity.status,
+        }
+      : null,
+    tasks: candidates.map((task) => ({
+      id: task.id,
+      t: truncate(task.title, 52),
+      p: truncate(task.project, 24),
+      b: task.bucket,
+      due: task.dueIso,
+      e: task.estimatedMinutes,
+      sc: Number(formatScore(task.score)),
+    })),
+  };
+
+  const prompt =
+    "Pick daily decisions from task IDs only. " +
+    "must_ids = what should be finished today, move_ids = safest deferrals, " +
+    "start_now_id = the first task to begin now. " +
+    "Prefer overdue/due-today for must. Avoid putting start_now_id in move_ids. " +
+    "Return only JSON matching schema.\n" +
+    `input=${JSON.stringify(input)}`;
+  logAiDebug("morning_decision.prompt", prompt);
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    config.geminiModel,
+  )}:generateContent`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": config.geminiApiKey,
+    },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 256,
+        responseMimeType: "application/json",
+        responseJsonSchema: GEMINI_MORNING_DECISION_SCHEMA,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    log(`Gemini morning decision skipped (HTTP ${response.status}): ${body}`);
+    return null;
+  }
+
+  const payload = await response.json();
+  const modelText = extractGeminiText(payload);
+  logAiDebug("morning_decision.raw", modelText);
+  const parsed = tryParseJsonObject(normalizeModelJsonText(modelText));
+  if (!parsed || typeof parsed !== "object") return null;
+  return sanitizeMorningDecisionIds(parsed, allowedIds);
+}
+
+function sanitizeMorningDecisionIds(value, allowedIds) {
+  const normalizeList = (items, max) => {
+    if (!Array.isArray(items)) return [];
+    const seen = new Set();
+    const normalized = [];
+    for (const item of items) {
+      const id = String(item || "").trim();
+      if (!id || seen.has(id) || !allowedIds.has(id)) continue;
+      seen.add(id);
+      normalized.push(id);
+      if (normalized.length >= max) break;
+    }
+    return normalized;
+  };
+
+  const mustIds = normalizeList(value.must_ids, 3);
+  const moveIds = normalizeList(value.move_ids, 3);
+  const startNowCandidate = String(value.start_now_id || "").trim();
+  const startNowId = allowedIds.has(startNowCandidate) ? startNowCandidate : "";
+  return { mustIds, moveIds, startNowId };
 }
 
 function computeFreeSlots(events, workWindow, minBlockMinutes) {
@@ -1127,13 +1437,20 @@ function buildDigestText({
   suggestedDefer,
   aiSummary,
   aiPlan,
+  morningDecision,
   eveningProgress,
 }) {
   const lines = [];
   const addLine = makeAddLine(lines, config.maxSlackLines);
   const dateLabel = todayIso;
 
-  addLine(`${mode === MODE_EVENING ? "Evening Sweep" : "Daily Digest"} | ${dateLabel}`);
+  const titlePrefix =
+    mode === MODE_EVENING
+      ? "Evening Sweep"
+      : mode === MODE_MIDDAY
+        ? "Midday Replan"
+        : "Daily Digest";
+  addLine(`${titlePrefix} | ${dateLabel}`);
   if (mode === MODE_EVENING) {
     if (eveningProgress) {
       addLine("Progress");
@@ -1174,6 +1491,19 @@ function buildDigestText({
     tasks: futurePressure,
     todayIso,
   });
+
+  if (mode !== MODE_EVENING && morningDecision) {
+    const mustText = formatDecisionTaskList(morningDecision.must);
+    const moveText = formatDecisionTaskList(morningDecision.move);
+    const startText = morningDecision.startNow
+      ? formatTaskCompact(morningDecision.startNow, todayIso)
+      : "none";
+
+    addLine(`Must/Move/Start (${morningDecision.source.toUpperCase()})`);
+    addLine(`Must: ${mustText}`);
+    addLine(`Move: ${moveText}`);
+    addLine(`Start: ${startText}`);
+  }
 
   if (top3.length > 0) {
     addLine("TOP 3");
@@ -1249,6 +1579,14 @@ function formatTaskCompact(task, todayIso) {
   const project = truncate(task.project, 18);
   const due = duePhrase(dateDiffDays(todayIso, task.dueIso));
   return `${priority} ${title} | ${project} | ${due}`;
+}
+
+function formatDecisionTaskList(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) return "none";
+  return tasks
+    .slice(0, 3)
+    .map((task) => `${truncate(task.title, 24)} (${truncate(task.project, 10)})`)
+    .join("; ");
 }
 
 function normalizePriorityTag(priority) {
@@ -1702,6 +2040,7 @@ function zonedDateTimeToUtc(isoDate, hour, minute, timeZone) {
 }
 
 function shouldRunThisHour(mode) {
+  if (mode === "midday") return true;
   const localHour = getLocalHour(config.timezone);
   if (mode === "morning") return localHour === config.morningHour;
   if (mode === "evening") return localHour === config.eveningHour;
@@ -1724,6 +2063,27 @@ function truncate(value, maxLen) {
   return `${text.slice(0, Math.max(0, maxLen - 3))}...`;
 }
 
+function getCurrentTimeInTimezone(timezone) {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+
+  const map = {};
+  for (const part of parts) {
+    if (part.type !== "literal") map[part.type] = part.value;
+  }
+  const isoDate = `${map.year}-${map.month}-${map.day}`;
+  return zonedDateTimeToUtc(isoDate, Number(map.hour), Number(map.minute), timezone);
+}
+
 module.exports = {
   notion,
   mapPageToTask,
@@ -1733,6 +2093,7 @@ module.exports = {
   buildPlanningCandidates,
   buildProjectPlans,
   buildProjectBlocks,
+  buildDeterministicMorningDecisionIds,
   computeFreeSlots,
   reserveFocusBuffer,
   shouldRunThisHour,

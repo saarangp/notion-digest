@@ -28,6 +28,7 @@ Deterministic Notion digest with Google Calendar time-block planning in the morn
 Set `MODE`:
 
 - `morning`: digest + calendar block creation
+- `midday`: digest + remaining-day calendar replan
 - `evening`: digest + rollover
 - `both`: run both sequentially (manual usage)
 
@@ -85,6 +86,7 @@ DRY_RUN=1 MODE=morning node src/index.js
 
 ```bash
 npm run morning
+npm run midday
 npm run evening
 npm run both
 npm run test
@@ -111,9 +113,10 @@ Morning planner:
 3. Computes free slots inside workday window
 4. Reserves `FOCUS_BUFFER_MINUTES`
 5. Builds candidates from overdue, due-today, due-soon, and high-pressure future tasks
-6. Converts task triage into project demand (`triage score -> 30m units per task`)
-7. Uses Gemini to order project focus sequence (fallback deterministic if Gemini fails)
-8. Creates grouped busy project blocks in Google Calendar with task breakdowns
+6. Produces a Morning Decision section: `Must / Move / Start` (Gemini IDs + deterministic fallback)
+7. Converts task triage into project demand (`triage score -> 30m units per task`)
+8. Uses Gemini to order project focus sequence (fallback deterministic if Gemini fails)
+9. Creates grouped busy project blocks in Google Calendar with task breakdowns
 
 ## Evening Rollover Behavior
 
