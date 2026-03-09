@@ -2,8 +2,7 @@ name: Notion Daily Digest
 
 on:
   schedule:
-    - cron: "0 17 * * *"  # 9 AM PST (America/Los_Angeles, UTC-8); runs 10 AM during PDT
-    - cron: "0 3 * * *"   # 7 PM PST (America/Los_Angeles, UTC-8); runs 8 PM during PDT
+    - cron: "0 * * * *"   # hourly; app-level local-hour guard handles 9 AM / 6 PM + DST
   workflow_dispatch:
     inputs:
       mode:
@@ -34,11 +33,10 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Morning digest
-        if: github.event.schedule == '0 17 * * *' || github.event.inputs.mode == 'morning' || github.event.inputs.mode == 'both'
+        if: github.event_name == 'schedule' || github.event.inputs.mode == 'morning' || github.event.inputs.mode == 'both'
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          APP_MODE: digest
           NOTIFIER: ${{ vars.NOTIFIER }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -59,10 +57,11 @@ jobs:
           NOTION_CREATED_TIME_PROP: ${{ vars.NOTION_CREATED_TIME_PROP }}
           NOTION_LAST_EDITED_PROP: ${{ vars.NOTION_LAST_EDITED_PROP }}
 
-          HIGH_PRIORITY_VALUES: ${{ vars.HIGH_PRIORITY_VALUES }}
           CLOSED_STATUS_VALUES: ${{ vars.CLOSED_STATUS_VALUES }}
           DUE_WINDOW_DAYS: ${{ vars.DUE_WINDOW_DAYS }}
           DUE_SOON_DAYS: ${{ vars.DUE_SOON_DAYS }}
+          PLANNING_HORIZON_DAYS: ${{ vars.PLANNING_HORIZON_DAYS }}
+          FUTURE_RISK_DAILY_MINUTES_THRESHOLD: ${{ vars.FUTURE_RISK_DAILY_MINUTES_THRESHOLD }}
 
           W_PRIORITY: ${{ vars.W_PRIORITY }}
           W_DUE: ${{ vars.W_DUE }}
@@ -78,19 +77,26 @@ jobs:
           WORKDAY_START_HOUR: ${{ vars.WORKDAY_START_HOUR }}
           WORKDAY_END_HOUR: ${{ vars.WORKDAY_END_HOUR }}
           FOCUS_BUFFER_MINUTES: ${{ vars.FOCUS_BUFFER_MINUTES }}
+          PLAN_MIN_BLOCK_MINUTES: ${{ vars.PLAN_MIN_BLOCK_MINUTES }}
+          PLAN_MAX_BLOCKS: ${{ vars.PLAN_MAX_BLOCKS }}
+          PLAN_MAX_PROJECTS: ${{ vars.PLAN_MAX_PROJECTS }}
+          PLAN_CANDIDATE_LIMIT: ${{ vars.PLAN_CANDIDATE_LIMIT }}
+          PLANNER_EVENT_PREFIX: ${{ vars.PLANNER_EVENT_PREFIX }}
 
           MAX_SLACK_LINES: ${{ vars.MAX_SLACK_LINES }}
           MAX_TASKS_PER_SECTION: ${{ vars.MAX_TASKS_PER_SECTION }}
           TIMEZONE: America/Los_Angeles
+          MORNING_HOUR_LOCAL: 9
+          EVENING_HOUR_LOCAL: 18
+          ENFORCE_LOCAL_HOUR: 1
           MODE: morning
         run: node src/index.js
 
       - name: Evening sweep
-        if: github.event.schedule == '0 3 * * *' || github.event.inputs.mode == 'evening' || github.event.inputs.mode == 'both'
+        if: github.event_name == 'schedule' || github.event.inputs.mode == 'evening' || github.event.inputs.mode == 'both'
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          APP_MODE: digest
           NOTIFIER: ${{ vars.NOTIFIER }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -111,10 +117,11 @@ jobs:
           NOTION_CREATED_TIME_PROP: ${{ vars.NOTION_CREATED_TIME_PROP }}
           NOTION_LAST_EDITED_PROP: ${{ vars.NOTION_LAST_EDITED_PROP }}
 
-          HIGH_PRIORITY_VALUES: ${{ vars.HIGH_PRIORITY_VALUES }}
           CLOSED_STATUS_VALUES: ${{ vars.CLOSED_STATUS_VALUES }}
           DUE_WINDOW_DAYS: ${{ vars.DUE_WINDOW_DAYS }}
           DUE_SOON_DAYS: ${{ vars.DUE_SOON_DAYS }}
+          PLANNING_HORIZON_DAYS: ${{ vars.PLANNING_HORIZON_DAYS }}
+          FUTURE_RISK_DAILY_MINUTES_THRESHOLD: ${{ vars.FUTURE_RISK_DAILY_MINUTES_THRESHOLD }}
 
           W_PRIORITY: ${{ vars.W_PRIORITY }}
           W_DUE: ${{ vars.W_DUE }}
@@ -130,9 +137,17 @@ jobs:
           WORKDAY_START_HOUR: ${{ vars.WORKDAY_START_HOUR }}
           WORKDAY_END_HOUR: ${{ vars.WORKDAY_END_HOUR }}
           FOCUS_BUFFER_MINUTES: ${{ vars.FOCUS_BUFFER_MINUTES }}
+          PLAN_MIN_BLOCK_MINUTES: ${{ vars.PLAN_MIN_BLOCK_MINUTES }}
+          PLAN_MAX_BLOCKS: ${{ vars.PLAN_MAX_BLOCKS }}
+          PLAN_MAX_PROJECTS: ${{ vars.PLAN_MAX_PROJECTS }}
+          PLAN_CANDIDATE_LIMIT: ${{ vars.PLAN_CANDIDATE_LIMIT }}
+          PLANNER_EVENT_PREFIX: ${{ vars.PLANNER_EVENT_PREFIX }}
 
           MAX_SLACK_LINES: ${{ vars.MAX_SLACK_LINES }}
           MAX_TASKS_PER_SECTION: ${{ vars.MAX_TASKS_PER_SECTION }}
           TIMEZONE: America/Los_Angeles
+          MORNING_HOUR_LOCAL: 9
+          EVENING_HOUR_LOCAL: 18
+          ENFORCE_LOCAL_HOUR: 1
           MODE: evening
         run: node src/index.js

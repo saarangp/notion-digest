@@ -3,6 +3,7 @@ const path = require("node:path");
 const { Client } = require("@notionhq/client");
 const {
   config,
+  MODE_MORNING,
   MODE_EVENING,
   BUCKETS,
   PRIORITY_TO_NUMERIC,
@@ -11,6 +12,7 @@ const {
 const { log } = require("./logger");
 
 const notion = new Client({ auth: config.notionApiKey });
+const PLANNER_EVENT_SOURCE = "notion-digest/day-planner";
 const GEMINI_SUMMARY_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -45,21 +47,45 @@ const GEMINI_PLAN_SCHEMA = {
   },
 };
 
+const GEMINI_PROJECT_ORDER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["project_order"],
+  properties: {
+    project_order: {
+      type: "array",
+      minItems: 1,
+      maxItems: 10,
+      items: { type: "string", minLength: 1 },
+    },
+  },
+};
+
 async function runDigest(mode) {
   const digest = await computeDigest(mode);
-  await postNotification(digest.text);
+  const operations =
+    mode === MODE_EVENING
+      ? await runEveningAutoRollover(digest.todayIso, digest.ranked)
+      : mode === MODE_MORNING
+        ? await runMorningBlockPlanner(digest.todayIso, digest.ranked)
+        : null;
+
+  await postNotification(appendOperationalNotes(digest.text, operations));
   await writeDailyLog({
     todayIso: digest.todayIso,
     ranked: digest.ranked,
     top3: digest.top3,
     capacity: digest.capacity,
     mode,
+    operations,
   });
 }
 
 async function computeDigest(mode) {
   const todayIso = getTodayIso(config.timezone);
-  const endIso = addDaysIso(todayIso, config.dueWindowDays);
+  const horizonDays =
+    mode === MODE_EVENING ? 0 : Math.max(config.dueWindowDays, config.planningHorizonDays);
+  const endIso = addDaysIso(todayIso, horizonDays);
   const tasks = await fetchTasks(mode, todayIso, endIso);
   const eveningProgress =
     mode === MODE_EVENING ? await fetchEveningProgressStats(todayIso) : null;
@@ -136,8 +162,7 @@ async function fetchTasks(mode, todayIso, endIso) {
   const tasks = pages
     .map((page) => mapPageToTask(page))
     .filter((task) => task.dueIso)
-    .filter((task) => !isClosed(task))
-    .filter((task) => isHighPriority(task.priority));
+    .filter((task) => !isClosed(task));
 
   await resolveProjectNames(tasks);
   return tasks;
@@ -324,6 +349,11 @@ function extractProperty(page, propertyName) {
 function preprocessTask(task, todayIso) {
   const dueInDays = dateDiffDays(todayIso, task.dueIso);
   const isOverdue = dueInDays < 0;
+  const remainingDays = Math.max(1, dueInDays + 1);
+  const requiredDailyMinutes = Math.ceil(task.estimatedMinutes / remainingDays);
+  const isFutureLoadRisk =
+    dueInDays > config.dueSoonDays &&
+    requiredDailyMinutes >= config.futureRiskDailyMinutesThreshold;
 
   const touchReference = task.lastEditedIso || task.createdIso;
   const touchDate = touchReference ? normalizeIsoDate(touchReference) : todayIso;
@@ -336,6 +366,9 @@ function preprocessTask(task, todayIso) {
     ...task,
     dueInDays,
     isOverdue,
+    remainingDays,
+    requiredDailyMinutes,
+    isFutureLoadRisk,
     daysSinceLastTouch,
     daysSinceCreated,
     bucket: getBucket(dueInDays),
@@ -456,28 +489,32 @@ function hasCalendarConfig() {
   return !!(config.googleClientEmail && config.googlePrivateKey && config.googleCalendarId);
 }
 
-async function fetchTodayCalendarEvents(todayIso) {
+async function getCalendarClient() {
   let google;
   try {
     ({ google } = require("googleapis"));
   } catch {
     throw new Error(
-      "Calendar capacity is enabled but 'googleapis' is not installed. Run npm install.",
+      "Calendar integrations are enabled but 'googleapis' is not installed. Run npm install.",
     );
   }
 
   const auth = new google.auth.JWT({
     email: config.googleClientEmail,
     key: config.googlePrivateKey.replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
+    scopes: ["https://www.googleapis.com/auth/calendar"],
   });
 
-  const calendar = google.calendar({ version: "v3", auth });
+  return google.calendar({ version: "v3", auth });
+}
+
+async function fetchTodayCalendarEvents(todayIso, calendar = null) {
+  const calendarClient = calendar || (await getCalendarClient());
 
   const dayStart = zonedDateTimeToUtc(todayIso, 0, 0, config.timezone);
   const dayEnd = zonedDateTimeToUtc(addDaysIso(todayIso, 1), 0, 0, config.timezone);
 
-  const response = await calendar.events.list({
+  const response = await calendarClient.events.list({
     calendarId: config.googleCalendarId,
     timeMin: dayStart.toISOString(),
     timeMax: dayEnd.toISOString(),
@@ -513,6 +550,574 @@ function pickSuggestedDefer(top3, capacity) {
   return [...top3].sort((a, b) => a.score - b.score)[0];
 }
 
+function pickFutureLoadRisks(ranked) {
+  return ranked
+    .filter((task) => task.isFutureLoadRisk)
+    .sort((a, b) => {
+      if (a.dueInDays !== b.dueInDays) return a.dueInDays - b.dueInDays;
+      if (a.requiredDailyMinutes !== b.requiredDailyMinutes) {
+        return b.requiredDailyMinutes - a.requiredDailyMinutes;
+      }
+      return b.score - a.score;
+    })
+    .slice(0, Math.max(config.maxTasksPerSection, 2));
+}
+
+function appendOperationalNotes(text, operations) {
+  if (!operations) return text;
+
+  const lines = [text, "", "Automation"];
+  if (operations.kind === "planner") {
+    lines.push(operations.summary);
+    for (const block of operations.preview || []) {
+      const start = formatLocalTime(block.start, config.timezone);
+      const end = formatLocalTime(block.end, config.timezone);
+      lines.push(`- ${start}-${end}: ${truncate(block.project, 18)} | ${truncate(block.title, 54)}`);
+    }
+  } else if (operations.kind === "rollover") {
+    lines.push(operations.summary);
+  }
+
+  return lines.join("\n").trim();
+}
+
+async function runMorningBlockPlanner(todayIso, ranked) {
+  if (!hasCalendarConfig()) {
+    return {
+      kind: "planner",
+      summary: "Planner skipped: Google Calendar is not configured.",
+      preview: [],
+    };
+  }
+
+  const candidates = buildPlanningCandidates(ranked);
+  if (candidates.length === 0) {
+    return {
+      kind: "planner",
+      summary: "Planner skipped: no actionable tasks for today.",
+      preview: [],
+    };
+  }
+
+  const calendar = await getCalendarClient();
+  const events = await fetchTodayCalendarEvents(todayIso, calendar);
+  const managedEvents = events.filter((event) => isManagedPlannerEvent(event));
+  const deletedCount = await deleteManagedPlannerEvents(calendar, managedEvents);
+  const busyEvents = events.filter((event) => !isManagedPlannerEvent(event));
+
+  const workWindow = getWorkWindow(todayIso);
+  const rawSlots = computeFreeSlots(busyEvents, workWindow, config.planMinBlockMinutes);
+  const usableSlots = reserveFocusBuffer(rawSlots, config.focusBufferMinutes, config.planMinBlockMinutes).map(
+    (slot, index) => ({ ...slot, index }),
+  );
+
+  if (usableSlots.length === 0) {
+    return {
+      kind: "planner",
+      summary: "Planner skipped: no free time blocks left in workday.",
+      preview: [],
+    };
+  }
+
+  const projectPlans = buildProjectPlans(candidates).slice(0, Math.max(1, config.planMaxProjects || 3));
+  if (projectPlans.length === 0) {
+    return {
+      kind: "planner",
+      summary: "Planner skipped: no project-level candidates available.",
+      preview: [],
+    };
+  }
+
+  const geminiOrder = await maybeGenerateGeminiProjectOrder({
+    todayIso,
+    slots: usableSlots,
+    projects: projectPlans,
+  });
+  const orderedProjects = applyProjectOrder(projectPlans, geminiOrder);
+  const blocks = buildProjectBlocks({
+    slots: usableSlots,
+    projects: orderedProjects,
+    maxBlocks: config.planMaxBlocks,
+    minBlockMinutes: config.planMinBlockMinutes,
+  });
+
+  if (blocks.length === 0) {
+    return {
+      kind: "planner",
+      summary: "Planner skipped: unable to assign any tasks to free slots.",
+      preview: [],
+    };
+  }
+
+  const createdCount = await createPlannerEvents(calendar, todayIso, blocks);
+  const sourceLabel = geminiOrder && geminiOrder.length > 0 ? "Gemini-ordered" : "fallback";
+  return {
+    kind: "planner",
+    summary:
+      `Created ${createdCount} busy project block(s) for today` +
+      ` (${sourceLabel}, cleared ${deletedCount} previous block(s)).`,
+    preview: blocks.slice(0, 4).map((block) => ({
+      start: block.start,
+      end: block.end,
+      project: block.project,
+      title: block.taskTitles.slice(0, 2).join(", ") || "Project work",
+    })),
+  };
+}
+
+async function runEveningAutoRollover(todayIso, ranked) {
+  const rolloverCandidates = ranked.filter(
+    (task) => task.bucket === BUCKETS.OVERDUE || task.bucket === BUCKETS.DUE_TODAY,
+  );
+
+  if (rolloverCandidates.length === 0) {
+    return {
+      kind: "rollover",
+      summary: "No overdue or due-today open tasks to move.",
+    };
+  }
+
+  const targetDate = addDaysIso(todayIso, 1);
+  let movedCount = 0;
+  for (const task of rolloverCandidates) {
+    if (config.dryRun) {
+      log(`DRY_RUN evening rollover for ${task.id} -> ${targetDate}`);
+      movedCount += 1;
+      continue;
+    }
+
+    await notion.pages.update({
+      page_id: task.id,
+      properties: {
+        [config.notionDueProp]: { date: { start: targetDate } },
+      },
+    });
+    movedCount += 1;
+  }
+
+  const overdueCount = rolloverCandidates.filter((task) => task.bucket === BUCKETS.OVERDUE).length;
+  const dueTodayCount = rolloverCandidates.filter((task) => task.bucket === BUCKETS.DUE_TODAY).length;
+  return {
+    kind: "rollover",
+    summary:
+      `Auto-moved ${movedCount} task(s) to ${targetDate}` +
+      ` (overdue: ${overdueCount}, due today: ${dueTodayCount})` +
+      `${config.dryRun ? " [DRY_RUN]" : ""}.`,
+  };
+}
+
+function buildPlanningCandidates(ranked) {
+  return ranked
+    .filter((task) => task.bucket !== BUCKETS.LATER || task.isFutureLoadRisk)
+    .map((task) => ({
+      ...task,
+      planningScore: scorePlanningCandidate(task),
+    }))
+    .sort((a, b) => {
+      if (a.bucket !== b.bucket) {
+        const order = {
+          [BUCKETS.OVERDUE]: 0,
+          [BUCKETS.DUE_TODAY]: 1,
+          [BUCKETS.DUE_SOON]: 2,
+          [BUCKETS.LATER]: 3,
+        };
+        return order[a.bucket] - order[b.bucket];
+      }
+      if (a.planningScore !== b.planningScore) return b.planningScore - a.planningScore;
+      if (a.requiredDailyMinutes !== b.requiredDailyMinutes) {
+        return b.requiredDailyMinutes - a.requiredDailyMinutes;
+      }
+      return a.dueIso.localeCompare(b.dueIso);
+    })
+    .slice(0, Math.max(3, config.planCandidateLimit));
+}
+
+function scorePlanningCandidate(task) {
+  const priorityScore = (PRIORITY_TO_NUMERIC[task.priority] || 1) / 5;
+  const dueScore = 1 / (Math.max(task.dueInDays, 0) + 1);
+  const loadScore = Math.min(1, task.requiredDailyMinutes / 180);
+  const riskBoost = task.isFutureLoadRisk ? 0.25 : 0;
+  return dueScore * 0.45 + loadScore * 0.35 + priorityScore * 0.2 + riskBoost;
+}
+
+function computeFreeSlots(events, workWindow, minBlockMinutes) {
+  const busyIntervals = [];
+
+  for (const event of events) {
+    if (!event || !event.start || !event.end) continue;
+    if (event.start.date || event.end.date) continue;
+    if (isSelfDeclined(event)) continue;
+
+    const eventStart = new Date(event.start.dateTime);
+    const eventEnd = new Date(event.end.dateTime);
+    if (!Number.isFinite(eventStart.getTime()) || !Number.isFinite(eventEnd.getTime())) continue;
+
+    const clippedStart = new Date(Math.max(eventStart.getTime(), workWindow.start.getTime()));
+    const clippedEnd = new Date(Math.min(eventEnd.getTime(), workWindow.end.getTime()));
+    if (clippedEnd > clippedStart) {
+      busyIntervals.push({ start: clippedStart, end: clippedEnd });
+    }
+  }
+
+  busyIntervals.sort((a, b) => a.start.getTime() - b.start.getTime());
+  const merged = [];
+  for (const interval of busyIntervals) {
+    const last = merged[merged.length - 1];
+    if (!last || interval.start.getTime() > last.end.getTime()) {
+      merged.push(interval);
+      continue;
+    }
+    if (interval.end.getTime() > last.end.getTime()) {
+      last.end = interval.end;
+    }
+  }
+
+  const slots = [];
+  let cursor = workWindow.start;
+  for (const interval of merged) {
+    if (interval.start.getTime() > cursor.getTime()) {
+      const gapMinutes = minutesBetween(cursor, interval.start);
+      if (gapMinutes >= minBlockMinutes) {
+        slots.push({ start: cursor, end: interval.start, minutes: gapMinutes });
+      }
+    }
+    if (interval.end.getTime() > cursor.getTime()) {
+      cursor = interval.end;
+    }
+  }
+
+  if (workWindow.end.getTime() > cursor.getTime()) {
+    const gapMinutes = minutesBetween(cursor, workWindow.end);
+    if (gapMinutes >= minBlockMinutes) {
+      slots.push({ start: cursor, end: workWindow.end, minutes: gapMinutes });
+    }
+  }
+
+  return slots;
+}
+
+function reserveFocusBuffer(slots, bufferMinutes, minBlockMinutes) {
+  if (!Array.isArray(slots) || slots.length === 0) return [];
+  let remaining = Math.max(0, bufferMinutes);
+  const mutable = slots.map((slot) => ({ ...slot, start: new Date(slot.start), end: new Date(slot.end) }));
+
+  for (let i = mutable.length - 1; i >= 0 && remaining > 0; i -= 1) {
+    const slot = mutable[i];
+    if (slot.minutes <= remaining) {
+      remaining -= slot.minutes;
+      mutable.splice(i, 1);
+      continue;
+    }
+    const newMinutes = slot.minutes - remaining;
+    slot.end = new Date(slot.end.getTime() - remaining * 60000);
+    slot.minutes = newMinutes;
+    remaining = 0;
+  }
+
+  return mutable.filter((slot) => slot.minutes >= minBlockMinutes);
+}
+
+function buildProjectPlans(tasks) {
+  const grouped = new Map();
+  for (const task of tasks) {
+    const projectName = String(task.project || "unassigned").trim() || "unassigned";
+    const key = projectName.toLowerCase();
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        projectKey: key,
+        project: projectName,
+        tasks: [],
+        demandMinutes: 0,
+        pressureScore: 0,
+      });
+    }
+
+    const entry = grouped.get(key);
+    const triageMinutes = getTriageMinutesForTask(task);
+    entry.tasks.push({
+      task,
+      triageMinutes,
+      remainingMinutes: triageMinutes,
+    });
+    entry.demandMinutes += triageMinutes;
+    entry.pressureScore += task.planningScore;
+  }
+
+  return [...grouped.values()]
+    .map((entry) => {
+      entry.tasks.sort((a, b) => {
+        if (a.task.bucket !== b.task.bucket) {
+          const order = {
+            [BUCKETS.OVERDUE]: 0,
+            [BUCKETS.DUE_TODAY]: 1,
+            [BUCKETS.DUE_SOON]: 2,
+            [BUCKETS.LATER]: 3,
+          };
+          return order[a.task.bucket] - order[b.task.bucket];
+        }
+        if (a.task.planningScore !== b.task.planningScore) {
+          return b.task.planningScore - a.task.planningScore;
+        }
+        return a.task.dueIso.localeCompare(b.task.dueIso);
+      });
+
+      const firstDue = entry.tasks[0]?.task?.dueIso || "9999-12-31";
+      const urgentCount = entry.tasks.filter(
+        (item) => item.task.bucket === BUCKETS.OVERDUE || item.task.bucket === BUCKETS.DUE_TODAY,
+      ).length;
+
+      return {
+        ...entry,
+        firstDue,
+        urgentCount,
+      };
+    })
+    .sort((a, b) => {
+      if (a.urgentCount !== b.urgentCount) return b.urgentCount - a.urgentCount;
+      if (a.pressureScore !== b.pressureScore) return b.pressureScore - a.pressureScore;
+      if (a.demandMinutes !== b.demandMinutes) return b.demandMinutes - a.demandMinutes;
+      if (a.firstDue !== b.firstDue) return a.firstDue.localeCompare(b.firstDue);
+      return a.project.localeCompare(b.project);
+    });
+}
+
+function getTriageMinutesForTask(task) {
+  const units = Math.max(1, Math.min(4, Math.round(task.planningScore * 3)));
+  return units * 30;
+}
+
+async function maybeGenerateGeminiProjectOrder({ todayIso, slots, projects }) {
+  if (!config.geminiApiKey || !Array.isArray(projects) || projects.length === 0) return null;
+
+  const input = {
+    today: todayIso,
+    slots: slots.map((slot) => ({ m: slot.minutes })),
+    projects: projects.map((project) => ({
+      id: project.projectKey,
+      p: truncate(project.project, 32),
+      demand_m: project.demandMinutes,
+      urgent_tasks: project.urgentCount,
+      due: project.firstDue,
+    })),
+  };
+
+  const prompt =
+    "Order project IDs for today's focus blocks. " +
+    "Prioritize overdue and due-today work, then high daily-pressure projects. " +
+    "Return only JSON matching schema.\n" +
+    `input=${JSON.stringify(input)}`;
+  logAiDebug("project_order.prompt", prompt);
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    config.geminiModel,
+  )}:generateContent`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": config.geminiApiKey,
+    },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 256,
+        responseMimeType: "application/json",
+        responseJsonSchema: GEMINI_PROJECT_ORDER_SCHEMA,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    log(`Gemini project ordering skipped (HTTP ${response.status}): ${body}`);
+    return null;
+  }
+
+  const payload = await response.json();
+  const modelText = extractGeminiText(payload);
+  logAiDebug("project_order.raw", modelText);
+  const parsed = tryParseJsonObject(normalizeModelJsonText(modelText));
+  if (!parsed || !Array.isArray(parsed.project_order)) return null;
+  return parsed.project_order
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function applyProjectOrder(projects, projectOrder) {
+  if (!Array.isArray(projectOrder) || projectOrder.length === 0) {
+    return projects;
+  }
+
+  const byKey = new Map(projects.map((project) => [project.projectKey, project]));
+  const ordered = [];
+  const seen = new Set();
+
+  for (const key of projectOrder) {
+    if (!byKey.has(key) || seen.has(key)) continue;
+    ordered.push(byKey.get(key));
+    seen.add(key);
+  }
+
+  for (const project of projects) {
+    if (!seen.has(project.projectKey)) {
+      ordered.push(project);
+      seen.add(project.projectKey);
+    }
+  }
+
+  return ordered;
+}
+
+function buildProjectBlocks({ slots, projects, maxBlocks, minBlockMinutes }) {
+  if (!Array.isArray(slots) || slots.length === 0 || !Array.isArray(projects) || projects.length === 0) {
+    return [];
+  }
+
+  const limit = Math.max(1, Number(maxBlocks) || 0);
+  const minMinutes = Math.max(30, Number(minBlockMinutes) || 30);
+  const slotState = slots.map((slot) => ({
+    ...slot,
+    cursor: new Date(slot.start),
+    remaining: slot.minutes,
+  }));
+  const projectState = projects.map((project) => ({
+    ...project,
+    remainingMinutes: project.demandMinutes,
+    taskAllocations: project.tasks.map((item) => ({
+      ...item,
+      remainingMinutes: item.remainingMinutes,
+    })),
+  }));
+  const blocks = [];
+  let slotIndex = 0;
+
+  for (const project of projectState) {
+    while (project.remainingMinutes >= minMinutes && blocks.length < limit && slotIndex < slotState.length) {
+      let slot = slotState[slotIndex];
+      if (slot.remaining < minMinutes) {
+        slotIndex += 1;
+        continue;
+      }
+
+      const blockMinutes = Math.min(slot.remaining, project.remainingMinutes);
+      const start = new Date(slot.cursor);
+      const end = new Date(start.getTime() + blockMinutes * 60000);
+      const taskBreakdown = allocateProjectTaskBreakdown(project.taskAllocations, blockMinutes);
+      const taskTitles = taskBreakdown.map((entry) => entry.task.title);
+
+      blocks.push({
+        slotIndex: slot.index,
+        start,
+        end,
+        minutes: blockMinutes,
+        project: project.project,
+        projectKey: project.projectKey,
+        taskBreakdown,
+        taskTitles,
+      });
+
+      slot.cursor = end;
+      slot.remaining -= blockMinutes;
+      project.remainingMinutes -= blockMinutes;
+
+      if (slot.remaining < minMinutes) {
+        slotIndex += 1;
+      }
+    }
+
+    if (blocks.length >= limit) break;
+  }
+
+  return blocks.sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+function allocateProjectTaskBreakdown(taskAllocations, minutes) {
+  const breakdown = [];
+  let remaining = minutes;
+
+  for (const item of taskAllocations) {
+    if (remaining <= 0) break;
+    if (item.remainingMinutes <= 0) continue;
+    const take = Math.min(item.remainingMinutes, remaining);
+    if (take <= 0) continue;
+    breakdown.push({ task: item.task, minutes: take });
+    item.remainingMinutes -= take;
+    remaining -= take;
+  }
+
+  return breakdown;
+}
+
+function isManagedPlannerEvent(event) {
+  return (
+    event?.extendedProperties?.private?.source === PLANNER_EVENT_SOURCE
+  );
+}
+
+async function deleteManagedPlannerEvents(calendar, events) {
+  if (!Array.isArray(events) || events.length === 0) return 0;
+  if (config.dryRun) {
+    log(`DRY_RUN planner would clear ${events.length} prior managed block(s).`);
+    return events.length;
+  }
+
+  for (const event of events) {
+    if (!event?.id) continue;
+    await calendar.events.delete({
+      calendarId: config.googleCalendarId,
+      eventId: event.id,
+    });
+  }
+
+  return events.length;
+}
+
+async function createPlannerEvents(calendar, todayIso, blocks) {
+  if (config.dryRun) {
+    for (const block of blocks) {
+      log(
+        `DRY_RUN planner block ${block.start.toISOString()}-${block.end.toISOString()} ` +
+          `| ${block.project} | ${(block.taskTitles || []).join(", ")}`,
+      );
+    }
+    return blocks.length;
+  }
+
+  let created = 0;
+  for (const block of blocks) {
+    await calendar.events.insert({
+      calendarId: config.googleCalendarId,
+      requestBody: {
+        summary: `${config.plannerEventPrefix}: ${truncate(block.project, 32)}`,
+        description: [
+          `Project: ${block.project}`,
+          `Tasks: ${
+            block.taskBreakdown
+              .map((entry) => `${entry.task.title} (${entry.minutes}m)`)
+              .join("; ") || "none"
+          }`,
+          `Source: ${PLANNER_EVENT_SOURCE}`,
+        ].join("\n"),
+        start: { dateTime: block.start.toISOString() },
+        end: { dateTime: block.end.toISOString() },
+        transparency: "opaque",
+        extendedProperties: {
+          private: {
+            source: PLANNER_EVENT_SOURCE,
+            project_key: block.projectKey,
+            day: todayIso,
+          },
+        },
+      },
+    });
+    created += 1;
+  }
+
+  return created;
+}
+
 function buildDigestText({
   mode,
   todayIso,
@@ -540,6 +1145,7 @@ function buildDigestText({
   const overdue = ranked.filter((task) => task.bucket === BUCKETS.OVERDUE);
   const dueToday = ranked.filter((task) => task.bucket === BUCKETS.DUE_TODAY);
   const dueSoon = ranked.filter((task) => task.bucket === BUCKETS.DUE_SOON);
+  const futurePressure = pickFutureLoadRisks(ranked);
 
   addTaskSection({
     addLine,
@@ -559,6 +1165,13 @@ function buildDigestText({
     addLine,
     title: "Due Soon",
     tasks: dueSoon,
+    todayIso,
+  });
+
+  addTaskSection({
+    addLine,
+    title: "Future Pressure",
+    tasks: futurePressure,
     todayIso,
   });
 
@@ -613,12 +1226,6 @@ function makeAddLine(lines, maxLines) {
       lines.push(line);
     }
   };
-}
-
-function formatTaskDisplay(task, todayIso) {
-  return `${task.title} (${task.project}) [${formatScore(task.score)}] — ${duePhrase(
-    dateDiffDays(todayIso, task.dueIso),
-  )}`;
 }
 
 function addTaskSection({ addLine, title, tasks, todayIso }) {
@@ -680,7 +1287,7 @@ async function postNotification(text) {
   log(`Posted digest to ${config.notifier} successfully.`);
 }
 
-async function writeDailyLog({ todayIso, ranked, top3, capacity, mode }) {
+async function writeDailyLog({ todayIso, ranked, top3, capacity, mode, operations = null }) {
   const logEntry = {
     date: todayIso,
     mode,
@@ -691,6 +1298,7 @@ async function writeDailyLog({ todayIso, ranked, top3, capacity, mode }) {
     free_minutes: capacity.freeMinutes,
     required_minutes: capacity.requiredMinutes,
     day_status: capacity.status,
+    operations,
   };
 
   await fs.mkdir(config.logDir, { recursive: true });
@@ -961,10 +1569,6 @@ function isClosed(task) {
   return config.closedStatuses.has(String(task.status || "").trim().toLowerCase());
 }
 
-function isHighPriority(priority) {
-  return config.highPriorityValues.has(String(priority || "").trim().toLowerCase());
-}
-
 function getBucket(dueInDays) {
   if (dueInDays < 0) return BUCKETS.OVERDUE;
   if (dueInDays === 0) return BUCKETS.DUE_TODAY;
@@ -1038,22 +1642,20 @@ function addDaysIso(isoDate, days) {
   return date.toISOString().slice(0, 10);
 }
 
-function formatDateDisplay(isoDate) {
-  const [year, month, day] = isoDate.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(date);
-}
-
 function formatMinutes(minutes) {
   if (!Number.isFinite(minutes)) return "n/a";
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return `${h}h ${m}m`;
+}
+
+function formatLocalTime(date, timeZone) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 function minutesBetween(start, end) {
@@ -1127,6 +1729,12 @@ module.exports = {
   mapPageToTask,
   runDigest,
   computeDigest,
+  pickFutureLoadRisks,
+  buildPlanningCandidates,
+  buildProjectPlans,
+  buildProjectBlocks,
+  computeFreeSlots,
+  reserveFocusBuffer,
   shouldRunThisHour,
   getLocalHour,
   truncate,

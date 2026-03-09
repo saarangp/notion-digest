@@ -1,0 +1,167 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+const {
+  pickFutureLoadRisks,
+  buildPlanningCandidates,
+  buildProjectPlans,
+  buildProjectBlocks,
+  computeFreeSlots,
+  reserveFocusBuffer,
+} = require("../src/digestService");
+
+test("pickFutureLoadRisks keeps only future-load risk tasks", () => {
+  const ranked = [
+    { id: "a", isFutureLoadRisk: true, dueInDays: 6, requiredDailyMinutes: 90, score: 0.5 },
+    { id: "b", isFutureLoadRisk: false, dueInDays: 2, requiredDailyMinutes: 30, score: 0.9 },
+    { id: "c", isFutureLoadRisk: true, dueInDays: 4, requiredDailyMinutes: 75, score: 0.4 },
+  ];
+
+  const risks = pickFutureLoadRisks(ranked);
+  assert.equal(risks.length, 2);
+  assert.equal(risks[0].id, "c");
+  assert.equal(risks[1].id, "a");
+});
+
+test("buildPlanningCandidates includes future-pressure later tasks", () => {
+  const ranked = [
+    {
+      id: "overdue",
+      bucket: "overdue",
+      isFutureLoadRisk: false,
+      dueInDays: -1,
+      requiredDailyMinutes: 40,
+      priority: "p2",
+      dueIso: "2026-03-08",
+    },
+    {
+      id: "later-risk",
+      bucket: "later",
+      isFutureLoadRisk: true,
+      dueInDays: 8,
+      requiredDailyMinutes: 80,
+      priority: "p1",
+      dueIso: "2026-03-17",
+    },
+    {
+      id: "later-normal",
+      bucket: "later",
+      isFutureLoadRisk: false,
+      dueInDays: 9,
+      requiredDailyMinutes: 20,
+      priority: "p1",
+      dueIso: "2026-03-18",
+    },
+  ];
+
+  const candidates = buildPlanningCandidates(ranked);
+  assert.equal(candidates.some((task) => task.id === "later-risk"), true);
+  assert.equal(candidates.some((task) => task.id === "later-normal"), false);
+  assert.equal(candidates[0].id, "overdue");
+});
+
+test("computeFreeSlots and reserveFocusBuffer produce usable slots", () => {
+  const workWindow = {
+    start: new Date("2026-03-09T09:00:00.000Z"),
+    end: new Date("2026-03-09T18:00:00.000Z"),
+  };
+
+  const events = [
+    {
+      start: { dateTime: "2026-03-09T10:00:00.000Z" },
+      end: { dateTime: "2026-03-09T11:00:00.000Z" },
+    },
+    {
+      start: { dateTime: "2026-03-09T13:00:00.000Z" },
+      end: { dateTime: "2026-03-09T14:00:00.000Z" },
+    },
+  ];
+
+  const slots = computeFreeSlots(events, workWindow, 30);
+  assert.deepEqual(slots.map((slot) => slot.minutes), [60, 120, 240]);
+
+  const buffered = reserveFocusBuffer(slots, 60, 30);
+  assert.deepEqual(buffered.map((slot) => slot.minutes), [60, 120, 180]);
+});
+
+test("buildProjectPlans groups tasks and computes triage-minute demand", () => {
+  const tasks = [
+    {
+      id: "a",
+      project: "Alpha",
+      planningScore: 1.1,
+      bucket: "due_today",
+      dueIso: "2026-03-09",
+      title: "A1",
+    },
+    {
+      id: "b",
+      project: "Alpha",
+      planningScore: 0.5,
+      bucket: "due_soon",
+      dueIso: "2026-03-10",
+      title: "A2",
+    },
+    {
+      id: "c",
+      project: "Beta",
+      planningScore: 1.0,
+      bucket: "overdue",
+      dueIso: "2026-03-08",
+      title: "B1",
+    },
+  ];
+
+  const projects = buildProjectPlans(tasks);
+  assert.equal(projects.length, 2);
+  assert.equal(projects[0].project, "Alpha");
+  assert.equal(projects[0].demandMinutes, 150);
+  assert.equal(projects[1].project, "Beta");
+  assert.equal(projects[1].demandMinutes, 90);
+});
+
+test("buildProjectBlocks fills long slots with grouped project blocks", () => {
+  const slots = [
+    {
+      index: 0,
+      start: new Date("2026-03-09T11:00:00.000Z"),
+      end: new Date("2026-03-09T17:00:00.000Z"),
+      minutes: 360,
+    },
+  ];
+
+  const projects = [
+    {
+      project: "Alpha",
+      projectKey: "alpha",
+      demandMinutes: 210,
+      tasks: [
+        { task: { title: "A1" }, remainingMinutes: 120 },
+        { task: { title: "A2" }, remainingMinutes: 90 },
+      ],
+    },
+    {
+      project: "Beta",
+      projectKey: "beta",
+      demandMinutes: 120,
+      tasks: [{ task: { title: "B1" }, remainingMinutes: 120 }],
+    },
+  ];
+
+  const blocks = buildProjectBlocks({
+    slots,
+    projects,
+    maxBlocks: 5,
+    minBlockMinutes: 30,
+  });
+
+  assert.equal(blocks.length, 2);
+  assert.deepEqual(
+    blocks.map((block) => block.minutes),
+    [210, 120],
+  );
+  assert.equal(blocks[0].project, "Alpha");
+  assert.equal(blocks[1].project, "Beta");
+  assert.equal(blocks[0].start.toISOString(), "2026-03-09T11:00:00.000Z");
+  assert.equal(blocks[1].end.toISOString(), "2026-03-09T16:30:00.000Z");
+});

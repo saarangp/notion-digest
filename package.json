@@ -6,9 +6,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "bot": "APP_MODE=bot node src/index.js",
-    "digest": "APP_MODE=digest node src/index.js",
-    "both": "APP_MODE=both node src/index.js",
+    "digest": "node src/index.js",
+    "both": "MODE=both node src/index.js",
     "morning": "MODE=morning node src/index.js",
     "evening": "MODE=evening node src/index.js",
     "dry-run": "DRY_RUN=1 MODE=morning node src/index.js",
@@ -19,7 +18,6 @@
   },
   "dependencies": {
     "@notionhq/client": "^2.2.15",
-    "discord.js": "^14.22.1",
     "dotenv": "^16.6.1",
     "googleapis": "^128.0.0"
   }
