@@ -177,7 +177,7 @@ jobs:
           MAX_TASKS_PER_SECTION: ${{ vars.MAX_TASKS_PER_SECTION }}
           TIMEZONE: America/Los_Angeles
           MORNING_HOUR_LOCAL: 9
-          EVENING_HOUR_LOCAL: 18
+          EVENING_HOUR_LOCAL: 22
           ENFORCE_LOCAL_HOUR: 1
           MODE: evening
         run: node src/index.js

@@ -97,6 +97,10 @@ DRY_RUN=1 MODE=morning node src/index.js
 - `ONE_OFF_MAX_TASKS` (default `2`)
 - `ONE_OFF_SHARE` (default `0.2`)
 
+## TODO
+
+- [ ] Add `MODE=weekly` to generate a weekly risk report and suggest pre-work focus blocks for high-pressure upcoming tasks.
+
 ## Running Locally
 
 ```bash
