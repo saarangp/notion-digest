@@ -2252,8 +2252,8 @@ function zonedDateTimeToUtc(isoDate, hour, minute, timeZone) {
 }
 
 function shouldRunThisHour(mode) {
-  if (mode === "midday") return true;
   const localHour = getLocalHour(config.timezone);
+  if (mode === "midday") return localHour === config.middayHour;
   if (mode === "morning") return localHour === config.morningHour;
   if (mode === "evening") return localHour === config.eveningHour;
   return localHour === config.morningHour || localHour === config.eveningHour;

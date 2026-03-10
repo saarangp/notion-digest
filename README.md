@@ -20,7 +20,7 @@ Deterministic Notion digest with Google Calendar time-block planning in the morn
 
 - `src/digestService.js`: Notion ingest, scoring, ranking, future-pressure detection, AI summary/plan, calendar planning, evening rollover
 - `src/config.js`: env parsing/defaults
-- `src/index.js`: mode dispatch (`morning`/`evening`/`both`) with local-hour guard
+- `src/index.js`: mode dispatch (`morning`/`midday`/`evening`) with local-hour guard
 - `.github/workflows/notion-digest.yml`: hourly scheduler + local-hour enforcement
 
 ## Runtime Modes
@@ -30,7 +30,6 @@ Set `MODE`:
 - `morning`: digest + calendar block creation
 - `midday`: digest + remaining-day calendar replan
 - `evening`: digest + rollover
-- `both`: run both sequentially (manual usage)
 
 ## Quick Start
 
@@ -107,7 +106,6 @@ DRY_RUN=1 MODE=morning node src/index.js
 npm run morning
 npm run midday
 npm run evening
-npm run both
 npm run test
 ```
 
@@ -118,6 +116,7 @@ Workflow: `.github/workflows/notion-digest.yml`
 - Runs hourly (`0 * * * *`)
 - App-level local-hour guard is enabled (`ENFORCE_LOCAL_HOUR=1`)
 - Morning fires at `MORNING_HOUR_LOCAL` (default `9`)
+- Midday replan fires at `MIDDAY_HOUR_LOCAL` (default `14`)
 - Evening fires at `EVENING_HOUR_LOCAL` (default `18`)
 - Timezone default: `America/Los_Angeles`
 

@@ -7,27 +7,16 @@ const {
   MODE_MORNING,
   MODE_MIDDAY,
   MODE_EVENING,
-  MODE_BOTH,
 } = require("./config");
 const { runDigest, shouldRunThisHour, getLocalHour } = require("./digestService");
 const { log } = require("./logger");
 
 async function main() {
-  const mode = normalizeMode(process.env.MODE || MODE_BOTH);
+  const mode = normalizeMode(process.env.MODE || MODE_MORNING);
   validateConfig();
 
   if (!config.enforceLocalHour) {
-    if (mode === MODE_MORNING || mode === MODE_BOTH) {
-      await runDigest(MODE_MORNING);
-    }
-
-    if (mode === MODE_MIDDAY) {
-      await runDigest(MODE_MIDDAY);
-    }
-
-    if (mode === MODE_EVENING || mode === MODE_BOTH) {
-      await runDigest(MODE_EVENING);
-    }
+    await runDigest(mode);
     return;
   }
 
@@ -40,30 +29,7 @@ async function main() {
     return;
   }
 
-  const localHour = getLocalHour(config.timezone);
-  if (mode === MODE_BOTH) {
-    if (localHour === config.morningHour) {
-      await runDigest(MODE_MORNING);
-      return;
-    }
-    if (localHour === config.eveningHour) {
-      await runDigest(MODE_EVENING);
-      return;
-    }
-    return;
-  }
-
-  if (mode === MODE_MORNING) {
-    await runDigest(MODE_MORNING);
-  }
-
-  if (mode === MODE_MIDDAY) {
-    await runDigest(MODE_MIDDAY);
-  }
-
-  if (mode === MODE_EVENING) {
-    await runDigest(MODE_EVENING);
-  }
+  await runDigest(mode);
 }
 
 module.exports = {

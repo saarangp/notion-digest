@@ -3,7 +3,6 @@ const path = require("node:path");
 const MODE_MORNING = "morning";
 const MODE_EVENING = "evening";
 const MODE_MIDDAY = "midday";
-const MODE_BOTH = "both";
 
 const BUCKETS = {
   OVERDUE: "overdue",
@@ -92,6 +91,7 @@ const config = {
   aiSummaryMaxTasks: parseInteger(process.env.AI_SUMMARY_MAX_TASKS, 12),
 
   morningHour: parseInteger(process.env.MORNING_HOUR_LOCAL, 9),
+  middayHour: parseInteger(process.env.MIDDAY_HOUR_LOCAL, 14),
   eveningHour: parseInteger(process.env.EVENING_HOUR_LOCAL, 18),
   dryRun: process.env.DRY_RUN === "1",
   enforceLocalHour: process.env.ENFORCE_LOCAL_HOUR === "1",
@@ -101,10 +101,10 @@ const config = {
 
 function normalizeMode(rawMode) {
   const value = String(rawMode || "").trim().toLowerCase();
-  if ([MODE_MORNING, MODE_EVENING, MODE_MIDDAY, MODE_BOTH].includes(value)) {
+  if ([MODE_MORNING, MODE_EVENING, MODE_MIDDAY].includes(value)) {
     return value;
   }
-  throw new Error(`Invalid MODE \"${rawMode}\". Use morning, midday, evening, or both.`);
+  throw new Error(`Invalid MODE \"${rawMode}\". Use morning, midday, or evening.`);
 }
 
 function validateConfig() {
@@ -149,7 +149,6 @@ module.exports = {
   MODE_MORNING,
   MODE_EVENING,
   MODE_MIDDAY,
-  MODE_BOTH,
   BUCKETS,
   PRIORITY_TO_NUMERIC,
   config,
