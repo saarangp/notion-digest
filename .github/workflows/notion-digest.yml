@@ -2,9 +2,8 @@ name: Notion Daily Digest
 
 on:
   schedule:
-    # Morning 9:00 local (LA): 16:00 UTC during PDT, 17:00 UTC during PST
+    # Morning 9:00 local (LA): 16:00 UTC
     - cron: "0 16 * * *"
-    - cron: "0 17 * * *"
     # Midday 14:00 local (LA): 21:00 UTC during PDT, 22:00 UTC during PST
     - cron: "0 21 * * *"
     - cron: "0 22 * * *"
@@ -41,7 +40,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Morning digest
-        if: (github.event_name == 'schedule' && (github.event.schedule == '0 16 * * *' || github.event.schedule == '0 17 * * *')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'morning')
+        if: (github.event_name == 'schedule' && github.event.schedule == '0 16 * * *') || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'morning')
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
