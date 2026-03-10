@@ -94,7 +94,6 @@ DRY_RUN=1 MODE=morning node src/index.js
 - `URGENT_LOAD_HEAVY_BOOST` (default `0.45`)
 - `ONE_OFF_MINUTES` (default `60`)
 - `ONE_OFF_MAX_TASKS` (default `2`)
-- `ONE_OFF_SHARE` (default `0.2`)
 
 ## TODO
 

@@ -582,12 +582,12 @@ function isSelfDeclined(event) {
   return selfAttendee ? selfAttendee.responseStatus === "declined" : false;
 }
 
-function eventStartsOnOrAfter(event, threshold) {
-  const startDateTime = event?.start?.dateTime;
-  if (!startDateTime) return false;
-  const start = new Date(startDateTime);
-  if (!Number.isFinite(start.getTime())) return false;
-  return start >= threshold;
+function eventEndsAfter(event, threshold) {
+  const endRaw = event?.end?.dateTime || event?.end?.date;
+  if (!endRaw) return false;
+  const end = new Date(endRaw);
+  if (!Number.isFinite(end.getTime())) return false;
+  return end > threshold;
 }
 
 function pickSuggestedDefer(top3, capacity) {
@@ -761,8 +761,8 @@ async function runMiddayReplan(todayIso, ranked) {
       ? sourceEvents
       : await fetchTodayCalendarEvents(todayIso, calendar, config.googlePlannerCalendarId);
   const managedEvents = plannerEvents.filter((event) => isManagedPlannerEvent(event));
-  const managedFuture = managedEvents.filter((event) => eventStartsOnOrAfter(event, effectiveStart));
-  const deletedCount = await deleteManagedPlannerEvents(calendar, managedFuture);
+  const managedRemaining = managedEvents.filter((event) => eventEndsAfter(event, effectiveStart));
+  const deletedCount = await deleteManagedPlannerEvents(calendar, managedRemaining);
   const blockingEvents =
     config.googlePlannerCalendarId === config.googleSourceCalendarId
       ? sourceEvents.filter((event) => !isManagedPlannerEvent(event))
@@ -819,7 +819,7 @@ async function runMiddayReplan(todayIso, ranked) {
     kind: "planner",
     summary:
       `Midday replan created ${createdCount} busy project block(s)` +
-      ` (cleared ${deletedCount} future tool block(s)).`,
+      ` (cleared ${deletedCount} remaining tool block(s)).`,
     preview: blocks.slice(0, 4).map((block) => ({
       start: block.start,
       end: block.end,
@@ -1416,10 +1416,9 @@ function buildOneOffProjectPlan({ tasks, orderedProjects, totalSlotMinutes }) {
   const selected = pool.slice(0, Math.max(1, config.oneOffMaxTasks));
   if (selected.length === 0) return null;
 
-  const byShare = Math.round(totalSlotMinutes * Math.max(0, config.oneOffShare));
   const targetMinutes = Math.min(
     totalSlotMinutes,
-    Math.max(config.planMinBlockMinutes, config.oneOffMinutes, byShare),
+    Math.max(config.planMinBlockMinutes, config.oneOffMinutes),
   );
   const allocation = allocateMinutesAcrossTasks(selected, targetMinutes);
   const demandMinutes = allocation.reduce((sum, item) => sum + item.minutes, 0);
@@ -1572,9 +1571,11 @@ function allocateProjectTaskBreakdown(taskAllocations, minutes) {
 }
 
 function isManagedPlannerEvent(event) {
-  return (
-    event?.extendedProperties?.private?.source === PLANNER_EVENT_SOURCE
-  );
+  if (event?.extendedProperties?.private?.source === PLANNER_EVENT_SOURCE) return true;
+  const summary = String(event?.summary || "").trim();
+  if (summary.startsWith(`${config.plannerEventPrefix}:`)) return true;
+  const description = String(event?.description || "");
+  return description.includes(`Source: ${PLANNER_EVENT_SOURCE}`);
 }
 
 async function deleteManagedPlannerEvents(calendar, events) {
@@ -1711,10 +1712,10 @@ function buildDigestText({
       ? formatTaskCompact(morningDecision.startNow, todayIso)
       : "none";
 
-    addLine(`Must/Move/Start (${morningDecision.source.toUpperCase()})`);
-    addLine(`Must: ${mustText}`);
-    addLine(`Move: ${moveText}`);
-    addLine(`Start: ${startText}`);
+    addLine(`Decision Plan (${formatDecisionSource(morningDecision.source)})`);
+    addLine(`Do Today: ${mustText}`);
+    addLine(`Defer (if needed): ${moveText}`);
+    addLine(`Start Next: ${startText}`);
   }
 
   if (top3.length > 0) {
@@ -1799,6 +1800,10 @@ function formatDecisionTaskList(tasks) {
     .slice(0, 3)
     .map((task) => `${truncate(task.title, 24)} (${truncate(task.project, 10)})`)
     .join("; ");
+}
+
+function formatDecisionSource(source) {
+  return source === "gemini" ? "Gemini" : "Deterministic fallback";
 }
 
 function normalizePriorityTag(priority) {

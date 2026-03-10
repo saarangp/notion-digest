@@ -52,7 +52,6 @@ const config = {
   urgentLoadHeavyBoost: parseFloatOrDefault(process.env.URGENT_LOAD_HEAVY_BOOST, 0.45),
   oneOffMinutes: parseInteger(process.env.ONE_OFF_MINUTES, 60),
   oneOffMaxTasks: parseInteger(process.env.ONE_OFF_MAX_TASKS, 2),
-  oneOffShare: parseFloatOrDefault(process.env.ONE_OFF_SHARE, 0.2),
   planMinBlockMinutes: parseInteger(process.env.PLAN_MIN_BLOCK_MINUTES, 30),
   planMaxBlocks: parseInteger(process.env.PLAN_MAX_BLOCKS, 5),
   planMaxProjects: parseInteger(process.env.PLAN_MAX_PROJECTS, 3),

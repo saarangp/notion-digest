@@ -76,7 +76,6 @@ jobs:
           URGENT_LOAD_HEAVY_BOOST: ${{ vars.URGENT_LOAD_HEAVY_BOOST }}
           ONE_OFF_MINUTES: ${{ vars.ONE_OFF_MINUTES }}
           ONE_OFF_MAX_TASKS: ${{ vars.ONE_OFF_MAX_TASKS }}
-          ONE_OFF_SHARE: ${{ vars.ONE_OFF_SHARE }}
 
           W_PRIORITY: ${{ vars.W_PRIORITY }}
           W_DUE: ${{ vars.W_DUE }}
@@ -152,7 +151,6 @@ jobs:
           URGENT_LOAD_HEAVY_BOOST: ${{ vars.URGENT_LOAD_HEAVY_BOOST }}
           ONE_OFF_MINUTES: ${{ vars.ONE_OFF_MINUTES }}
           ONE_OFF_MAX_TASKS: ${{ vars.ONE_OFF_MAX_TASKS }}
-          ONE_OFF_SHARE: ${{ vars.ONE_OFF_SHARE }}
 
           W_PRIORITY: ${{ vars.W_PRIORITY }}
           W_DUE: ${{ vars.W_DUE }}
@@ -228,7 +226,6 @@ jobs:
           URGENT_LOAD_HEAVY_BOOST: ${{ vars.URGENT_LOAD_HEAVY_BOOST }}
           ONE_OFF_MINUTES: ${{ vars.ONE_OFF_MINUTES }}
           ONE_OFF_MAX_TASKS: ${{ vars.ONE_OFF_MAX_TASKS }}
-          ONE_OFF_SHARE: ${{ vars.ONE_OFF_SHARE }}
 
           W_PRIORITY: ${{ vars.W_PRIORITY }}
           W_DUE: ${{ vars.W_DUE }}
