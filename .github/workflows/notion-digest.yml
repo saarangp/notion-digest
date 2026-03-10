@@ -2,7 +2,15 @@ name: Notion Daily Digest
 
 on:
   schedule:
-    - cron: "0 * * * *"   # hourly; app-level local-hour guard handles morning/midday/evening + DST
+    # Morning 9:00 local (LA): 16:00 UTC during PDT, 17:00 UTC during PST
+    - cron: "0 16 * * *"
+    - cron: "0 17 * * *"
+    # Midday 14:00 local (LA): 21:00 UTC during PDT, 22:00 UTC during PST
+    - cron: "0 21 * * *"
+    - cron: "0 22 * * *"
+    # Evening 22:00 local (LA): 05:00 UTC during PDT, 06:00 UTC during PST
+    - cron: "0 5 * * *"
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -33,7 +41,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Morning digest
-        if: github.event_name == 'schedule' || github.event.inputs.mode == 'morning'
+        if: (github.event_name == 'schedule' && (github.event.schedule == '0 16 * * *' || github.event.schedule == '0 17 * * *')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'morning')
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
@@ -109,7 +117,7 @@ jobs:
         run: node src/index.js
 
       - name: Midday replan
-        if: github.event_name == 'schedule' || github.event.inputs.mode == 'midday'
+        if: (github.event_name == 'schedule' && (github.event.schedule == '0 21 * * *' || github.event.schedule == '0 22 * * *')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'midday')
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
@@ -185,7 +193,7 @@ jobs:
         run: node src/index.js
 
       - name: Evening sweep
-        if: github.event_name == 'schedule' || github.event.inputs.mode == 'evening'
+        if: (github.event_name == 'schedule' && (github.event.schedule == '0 5 * * *' || github.event.schedule == '0 6 * * *')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'evening')
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}

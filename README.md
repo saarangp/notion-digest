@@ -113,8 +113,8 @@ npm run test
 
 Workflow: `.github/workflows/notion-digest.yml`
 
-- Runs hourly (`0 * * * *`)
-- App-level local-hour guard is enabled (`ENFORCE_LOCAL_HOUR=1`)
+- Runs on targeted UTC schedules for LA local times (morning/midday/evening with DST-safe pairs)
+- App-level local-hour guard is enabled (`ENFORCE_LOCAL_HOUR=1`) as a safety check
 - Morning fires at `MORNING_HOUR_LOCAL` (default `9`)
 - Midday replan fires at `MIDDAY_HOUR_LOCAL` (default `14`)
 - Evening fires at `EVENING_HOUR_LOCAL` (default `18`)
