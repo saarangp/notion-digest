@@ -2,14 +2,12 @@ name: Notion Daily Digest
 
 on:
   schedule:
-    # Morning 9:00 local (LA): 16:00 UTC
+    # Morning 9:00 local (LA, during PDT): 16:00 UTC
     - cron: "0 16 * * *"
-    # Midday 14:00 local (LA): 21:00 UTC during PDT, 22:00 UTC during PST
+    # Midday 14:00 local (LA, during PDT): 21:00 UTC
     - cron: "0 21 * * *"
-    - cron: "0 22 * * *"
-    # Evening 22:00 local (LA): 05:00 UTC during PDT, 06:00 UTC during PST
+    # Evening 22:00 local (LA, during PDT): 05:00 UTC
     - cron: "0 5 * * *"
-    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -110,12 +108,12 @@ jobs:
           MORNING_HOUR_LOCAL: 9
           MIDDAY_HOUR_LOCAL: 14
           EVENING_HOUR_LOCAL: 18
-          ENFORCE_LOCAL_HOUR: 1
+          ENFORCE_LOCAL_HOUR: 0
           MODE: morning
         run: node src/index.js
 
       - name: Midday replan
-        if: (github.event_name == 'schedule' && (github.event.schedule == '0 21 * * *' || github.event.schedule == '0 22 * * *')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'midday')
+        if: (github.event_name == 'schedule' && github.event.schedule == '0 21 * * *') || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'midday')
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
@@ -185,12 +183,12 @@ jobs:
           MORNING_HOUR_LOCAL: 9
           MIDDAY_HOUR_LOCAL: 14
           EVENING_HOUR_LOCAL: 22
-          ENFORCE_LOCAL_HOUR: 1
+          ENFORCE_LOCAL_HOUR: 0
           MODE: midday
         run: node src/index.js
 
       - name: Evening sweep
-        if: (github.event_name == 'schedule' && (github.event.schedule == '0 5 * * *' || github.event.schedule == '0 6 * * *')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'evening')
+        if: (github.event_name == 'schedule' && github.event.schedule == '0 5 * * *') || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'evening')
         env:
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
@@ -260,6 +258,6 @@ jobs:
           MORNING_HOUR_LOCAL: 9
           MIDDAY_HOUR_LOCAL: 14
           EVENING_HOUR_LOCAL: 22
-          ENFORCE_LOCAL_HOUR: 1
+          ENFORCE_LOCAL_HOUR: 0
           MODE: evening
         run: node src/index.js

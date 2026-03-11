@@ -112,14 +112,14 @@ npm run test
 
 Workflow: `.github/workflows/notion-digest.yml`
 
-- Runs on targeted UTC schedules for LA local times (morning/midday/evening with DST-safe pairs)
-- App-level local-hour guard is enabled (`ENFORCE_LOCAL_HOUR=1`) as a safety check
+- Runs on targeted UTC schedules for LA local times
+- Local-hour guard is disabled in workflow steps (`ENFORCE_LOCAL_HOUR=0`) so delayed jobs still run
 - Morning fires at `MORNING_HOUR_LOCAL` (default `9`)
 - Midday replan fires at `MIDDAY_HOUR_LOCAL` (default `14`)
 - Evening fires at `EVENING_HOUR_LOCAL` (default `18`)
 - Timezone default: `America/Los_Angeles`
 
-This keeps behavior DST-safe without hard-coding UTC offsets.
+If you keep fixed UTC crons, update them when DST season changes.
 
 ## Planner Behavior
 
