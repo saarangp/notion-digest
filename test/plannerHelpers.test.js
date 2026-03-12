@@ -282,3 +282,50 @@ test("buildOneOffProjectPlan reserves urgent one-off tasks outside dominant proj
     ["b1", "c1"],
   );
 });
+
+test("buildOneOffProjectPlan targets 60 minutes per selected one-off when capacity allows", () => {
+  const tasks = [
+    {
+      id: "a1",
+      title: "Alpha deep work",
+      project: "Alpha",
+      bucket: "due_today",
+      score: 1.2,
+      planningScore: 1.1,
+      dueIso: "2026-03-09",
+    },
+    {
+      id: "b1",
+      title: "Beta quick one-off",
+      project: "Beta",
+      bucket: "due_today",
+      score: 1.0,
+      planningScore: 0.9,
+      dueIso: "2026-03-09",
+    },
+    {
+      id: "c1",
+      title: "Gamma one-off",
+      project: "Gamma",
+      bucket: "overdue",
+      score: 1.3,
+      planningScore: 1.0,
+      dueIso: "2026-03-08",
+    },
+  ];
+
+  const orderedProjects = [
+    { projectKey: "alpha", project: "Alpha", demandMinutes: 240, tasks: [] },
+    { projectKey: "delta", project: "Delta", demandMinutes: 120, tasks: [] },
+  ];
+
+  const oneOffPlan = buildOneOffProjectPlan({
+    tasks,
+    orderedProjects,
+    totalSlotMinutes: 240,
+  });
+
+  assert.ok(oneOffPlan);
+  assert.equal(oneOffPlan.demandMinutes, 120);
+  assert.deepEqual(oneOffPlan.tasks.map((item) => item.remainingMinutes), [60, 60]);
+});

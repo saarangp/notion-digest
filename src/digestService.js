@@ -1416,9 +1416,10 @@ function buildOneOffProjectPlan({ tasks, orderedProjects, totalSlotMinutes }) {
   const selected = pool.slice(0, Math.max(1, config.oneOffMaxTasks));
   if (selected.length === 0) return null;
 
+  const desiredMinutes = config.oneOffMinutes * selected.length;
   const targetMinutes = Math.min(
     totalSlotMinutes,
-    Math.max(config.planMinBlockMinutes, config.oneOffMinutes),
+    Math.max(config.planMinBlockMinutes, desiredMinutes),
   );
   const allocation = allocateMinutesAcrossTasks(selected, targetMinutes);
   const demandMinutes = allocation.reduce((sum, item) => sum + item.minutes, 0);
