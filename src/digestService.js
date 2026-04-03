@@ -2318,4 +2318,14 @@ module.exports = {
   shouldRunThisHour,
   getLocalHour,
   truncate,
+  // Exported for formatter.js
+  preprocessTask,
+  scoreTask,
+  rankTasks,
+  extractProperty,
+  getTodayIso,
+  getBucket,
+  duePhrase,
+  formatMinutes,
+  isClosed,
 };
