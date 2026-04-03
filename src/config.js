@@ -68,6 +68,7 @@ const config = {
   notionEstimatedMinutesProp: process.env.NOTION_ESTIMATED_MINUTES_PROP || "estimated_minutes",
   notionCreatedTimeProp: process.env.NOTION_CREATED_TIME_PROP || "Created time",
   notionLastEditedProp: process.env.NOTION_LAST_EDITED_PROP || "Last edited time",
+  notionHardDeadlineProp: process.env.NOTION_HARD_DEADLINE_PROP || "Hard Deadline",
 
   googleClientEmail: process.env.GOOGLE_CLIENT_EMAIL || "",
   googlePrivateKey: process.env.GOOGLE_PRIVATE_KEY || "",
