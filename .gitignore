@@ -4,6 +4,8 @@ dist/
 .DS_Store
 npm-debug.log*
 logs/
+release/
+electron-seed/
 .serena
 CLAUDE.md
 .worktrees

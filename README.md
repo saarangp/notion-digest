@@ -7,6 +7,7 @@ Private local planner backed by SQLite. The app is a local-first task and projec
 - React + Vite client
 - Local Node API server
 - SQLite database at `.data/planner.sqlite` by default
+- Optional Electron desktop shell for local macOS use
 - Manual project CRUD
 - Manual task CRUD
 - Bulk task capture into review
@@ -47,12 +48,34 @@ Build the client:
 npm run build
 ```
 
+Run the desktop app locally:
+
+```bash
+npm run electron
+```
+
+Package the macOS desktop app:
+
+```bash
+npm run electron:package
+```
+
+The packaged app is written to `release/`.
+
 ## Database
 
 Development database:
 
 ```text
 .data/planner.sqlite
+```
+
+The Electron app stores its packaged-app database in the macOS app data directory by default. During packaging, the current `.data/planner.sqlite` database is copied into a temporary `electron-seed/` folder and bundled into the app. On first launch, Electron seeds app data from that bundled copy when no app database exists yet.
+
+To overwrite the Electron app database with the current development database:
+
+```bash
+npm run electron:copy-db
 ```
 
 Override with:

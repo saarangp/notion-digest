@@ -3,11 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "description": "Private local planner backed by SQLite",
-  "main": "src/server/index.js",
+  "main": "src/electron/main.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "dev:server": "node src/server/index.js",
     "build": "vite build",
+    "electron": "npm run build && electron .",
+    "electron:package": "npm run build && node scripts/prepare-electron-seed.cjs && electron-packager . \"Local Planner\" --platform=darwin --arch=arm64 --out=release --overwrite --app-bundle-id=com.saarang.local-planner --extra-resource=electron-seed --ignore=\"^/(\\.data|\\.git|\\.github|\\.serena|\\.worktrees|blueprint|docs|electron-seed|logs|test|release)$\"",
+    "electron:dist": "npm run electron:package",
+    "electron:copy-db": "node scripts/copy-current-db-to-electron.cjs",
     "preview": "vite preview --host 127.0.0.1",
     "start": "node src/server/index.js",
     "import:notion": "node src/importers/notionImport.js",
@@ -23,5 +27,9 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "vite": "^7.2.6"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.0.0",
+    "electron": "^39.2.7"
   }
 }
