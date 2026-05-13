@@ -60,8 +60,13 @@ function relationProjectIds(page, config = notionImportConfig) {
 function selectedProjectName(page, config = notionImportConfig) {
   const prop = page.properties[config.projectProp];
   if (prop?.type === "select") return prop.select?.name || null;
-  if (prop?.type === "multi_select") return prop.multi_select.map((item) => item.name).join(", ");
+  if (prop?.type === "multi_select") return prop.multi_select[0]?.name || null;
   return null;
+}
+
+function extractPageTitle(page) {
+  const titleProp = Object.values(page.properties || {}).find((prop) => prop.type === "title");
+  return titleProp ? titleProp.title.map((part) => part.plain_text).join("").trim() : null;
 }
 
 function mapNotionPageToImportTask(page, config = notionImportConfig) {
@@ -87,6 +92,7 @@ function mapNotionPageToImportTask(page, config = notionImportConfig) {
 
 module.exports = {
   extractProperty,
+  extractPageTitle,
   mapPriority,
   isClosedNotionPage,
   mapNotionPageToImportTask,

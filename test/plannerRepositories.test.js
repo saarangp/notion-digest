@@ -3,8 +3,10 @@ const assert = require("node:assert/strict");
 const { openDatabase } = require("../src/server/db");
 const { migrate } = require("../src/server/schema");
 const {
+  completeProject,
   createProject,
   listProjectSummaries,
+  reopenProject,
   updateProject,
 } = require("../src/server/repositories/projectsRepository");
 const { listCalendarData } = require("../src/server/repositories/calendarRepository");
@@ -39,6 +41,7 @@ test("projects can be created, updated, and summarized", () => {
   const project = createProject(db, { name: "Thesis", deadlineDate: "2026-05-28" });
 
   assert.equal(project.name, "Thesis");
+  assert.equal(project.status, "active");
   assert.match(project.color, /^#/);
 
   const updated = updateProject(db, project.id, { deadlineDate: "2026-05-30" });
@@ -64,6 +67,45 @@ test("projects can be created, updated, and summarized", () => {
   assert.equal(summaries.length, 1);
   assert.equal(summaries[0].openTaskCount, 2);
   assert.equal(summaries[0].nextDueDate, "2026-05-18");
+});
+
+test("projects can only be completed when regular and easy tasks are closed", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Launch" });
+  const task = createTask(db, {
+    title: "Ship",
+    projectId: project.id,
+    priority: "High",
+  });
+  const easyTask = createEasyTask(db, {
+    title: "Clean notes",
+    projectId: project.id,
+  });
+
+  assert.throws(() => completeProject(db, project.id), /open tasks/);
+
+  completeTask(db, task.id);
+  assert.throws(() => completeProject(db, project.id), /open task/);
+
+  completeEasyTask(db, easyTask.id);
+  const done = completeProject(db, project.id);
+  assert.equal(done.status, "done");
+  assert.ok(done.completedAt);
+
+  const summaries = listProjectSummaries(db);
+  assert.equal(summaries.length, 0);
+});
+
+test("completed projects can be reopened", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Paper" });
+
+  const done = completeProject(db, project.id);
+  assert.equal(done.status, "done");
+
+  const reopened = reopenProject(db, project.id);
+  assert.equal(reopened.status, "active");
+  assert.equal(reopened.completedAt, null);
 });
 
 test("bulk-style tasks start in review and clear only after due date and priority", () => {
@@ -279,6 +321,17 @@ test("calendar includes deadline markers without task titles", () => {
   assert.equal(calendar.deadlines[0].date, "2026-05-20");
   assert.equal(calendar.deadlines[0].project.name, "Defense");
   assert.equal(JSON.stringify(calendar).includes("Private task title"), false);
+});
+
+test("calendar excludes completed project deadlines and bars", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Done Project", deadlineDate: "2026-05-20" });
+
+  completeProject(db, project.id);
+  const calendar = listCalendarData(db, { month: "2026-05", today: "2026-05-13" });
+
+  assert.equal(calendar.deadlines.length, 0);
+  assert.equal(calendar.projectBars.length, 0);
 });
 
 test("analytics heatmap groups completed regular and easy tasks by local completion date", () => {

@@ -1,4 +1,12 @@
-const { createProject, deleteProject, listProjectSummaries, listProjects, updateProject } = require("./repositories/projectsRepository");
+const {
+  completeProject,
+  createProject,
+  deleteProject,
+  listProjectSummaries,
+  listProjects,
+  reopenProject,
+  updateProject,
+} = require("./repositories/projectsRepository");
 const { listCompletedArchive, listCompletionHeatmap } = require("./repositories/analyticsRepository");
 const { listCalendarData } = require("./repositories/calendarRepository");
 const { completeTask, createTask, deleteTask, listTasks, reopenTask, updateTask } = require("./repositories/tasksRepository");
@@ -97,7 +105,7 @@ async function handleApi(req, res, db) {
 
     const routed = routePattern(url.pathname);
     if (routed?.resource === "projects") {
-      await handleProject(req, res, db, routed.id);
+      await handleProject(req, res, db, routed.id, routed.action);
       return;
     }
 
@@ -132,14 +140,26 @@ async function handleProjects(req, res, db) {
   methodNotAllowed(res);
 }
 
-async function handleProject(req, res, db, id) {
-  if (req.method === "PATCH") {
+async function handleProject(req, res, db, id, action) {
+  if (req.method === "PATCH" && action === "complete") {
+    const project = completeProject(db, id);
+    project ? sendJson(res, 200, { project }) : notFound(res);
+    return;
+  }
+
+  if (req.method === "PATCH" && action === "reopen") {
+    const project = reopenProject(db, id);
+    project ? sendJson(res, 200, { project }) : notFound(res);
+    return;
+  }
+
+  if (req.method === "PATCH" && !action) {
     const project = updateProject(db, id, await readJson(req));
     project ? sendJson(res, 200, { project }) : notFound(res);
     return;
   }
 
-  if (req.method === "DELETE") {
+  if (req.method === "DELETE" && !action) {
     deleteProject(db, id) ? sendNoContent(res) : notFound(res);
     return;
   }

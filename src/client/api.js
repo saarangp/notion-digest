@@ -58,6 +58,16 @@ export async function updateProject(id, input) {
   return body.project;
 }
 
+export async function completeProject(id) {
+  const body = await request(`/projects/${id}/complete`, { method: "PATCH" });
+  return body.project;
+}
+
+export async function reopenProject(id) {
+  const body = await request(`/projects/${id}/reopen`, { method: "PATCH" });
+  return body.project;
+}
+
 export async function listTasks(filters = {}) {
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);

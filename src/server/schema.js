@@ -5,6 +5,8 @@ function migrate(db) {
       name TEXT NOT NULL,
       color TEXT NOT NULL,
       deadline_date TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      completed_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -28,6 +30,9 @@ function migrate(db) {
 
     CREATE INDEX IF NOT EXISTS idx_tasks_status_due ON tasks(status, due_date);
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_import_source_id
+      ON tasks(imported_from, imported_id)
+      WHERE imported_from IS NOT NULL AND imported_id IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS easy_tasks (
       id TEXT PRIMARY KEY,
@@ -48,6 +53,16 @@ function migrate(db) {
       metadata_json TEXT
     );
   `);
+
+  addColumnIfMissing(db, "projects", "status", "TEXT NOT NULL DEFAULT 'active'");
+  addColumnIfMissing(db, "projects", "completed_at", "TEXT");
+}
+
+function addColumnIfMissing(db, table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((row) => row.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 module.exports = {

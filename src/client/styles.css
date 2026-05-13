@@ -189,7 +189,7 @@ textarea {
 
 .project-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 190px 96px;
+  grid-template-columns: 18px 24px minmax(0, 1fr) 190px 96px;
 }
 
 .easy-row {
@@ -199,6 +199,10 @@ textarea {
 
 .easy-row.done {
   opacity: 0.65;
+}
+
+.project-row.done {
+  opacity: 0.72;
 }
 
 .easy-row.compact {
@@ -1032,12 +1036,12 @@ textarea {
   .project-row {
     align-items: start;
     display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
+    grid-template-columns: 18px 24px minmax(0, 1fr);
   }
 
   .project-deadline-control,
   .project-next {
-    grid-column: 2 / 3;
+    grid-column: 3 / 4;
   }
 
   .project-deadline-control {

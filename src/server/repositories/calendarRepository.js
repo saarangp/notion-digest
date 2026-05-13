@@ -66,6 +66,7 @@ function listDeadlines(db, start, end) {
       SELECT *
       FROM projects
       WHERE deadline_date BETWEEN ? AND ?
+        AND status = 'active'
       ORDER BY deadline_date, lower(name)
     `)
     .all(start, end)
@@ -87,6 +88,7 @@ function listProjectBars(db, start, end) {
        AND t.status = 'todo'
        AND t.due_date IS NOT NULL
       WHERE p.deadline_date IS NOT NULL
+        AND p.status = 'active'
         AND p.deadline_date >= ?
       GROUP BY p.id
       HAVING earliest_due_date <= p.deadline_date
@@ -110,6 +112,7 @@ function listDeadlineOnlyBars(db, start, end) {
       SELECT p.*
       FROM projects p
       WHERE p.deadline_date BETWEEN ? AND ?
+        AND p.status = 'active'
         AND NOT EXISTS (
           SELECT 1
           FROM tasks t

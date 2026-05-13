@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Sidebar from "./components/Sidebar.jsx";
 import {
   completeEasyTask,
+  completeProject,
   completeTask,
   createEasyTask,
   createProject,
@@ -13,6 +14,7 @@ import {
   listProjectSummaries,
   listProjects,
   listTasks,
+  reopenProject,
   updateEasyTask,
   updateProject,
   updateTask,
@@ -68,6 +70,20 @@ export default function App() {
     await refreshData();
   }
 
+  async function handleProjectComplete(project) {
+    try {
+      await completeProject(project.id);
+      await refreshData();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleProjectReopen(project) {
+    await reopenProject(project.id);
+    await refreshData();
+  }
+
   async function handleCreateTask(input) {
     const task = await createTask(input);
     await refreshData();
@@ -113,10 +129,12 @@ export default function App() {
   }
 
   const view = useMemo(() => {
+    const activeProjects = projects.filter((project) => project.status !== "done");
+
     if (activeView === "Today") {
       return (
         <TodayView
-          projects={projects}
+          projects={activeProjects}
           tasks={tasks}
           easyTasks={easyTasks}
           onTaskChange={handleTaskChange}
@@ -127,7 +145,7 @@ export default function App() {
       );
     }
     if (activeView === "Bulk Add") {
-      return <BulkAddView projects={projects} onCreateTask={handleCreateTask} />;
+      return <BulkAddView projects={activeProjects} onCreateTask={handleCreateTask} />;
     }
     if (activeView === "Projects") {
       return (
@@ -138,9 +156,11 @@ export default function App() {
             tasks={tasks}
             onCreateProject={handleCreateProject}
             onProjectChange={handleProjectChange}
+            onProjectComplete={handleProjectComplete}
+            onProjectReopen={handleProjectReopen}
           />
           <TasksView
-            projects={projects}
+            projects={activeProjects}
             tasks={tasks}
             onCreateTask={handleCreateTask}
             onTaskChange={handleTaskChange}
@@ -159,7 +179,7 @@ export default function App() {
     if (activeView === "Easy") {
       return (
         <EasyView
-          projects={projects}
+          projects={activeProjects}
           easyTasks={easyTasks}
           onCreateEasyTask={handleCreateEasyTask}
           onEasyTaskChange={handleEasyTaskChange}

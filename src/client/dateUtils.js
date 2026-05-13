@@ -1,3 +1,5 @@
+import weekUtils from "../shared/weekUtils.cjs";
+
 export function todayIso() {
   const now = new Date();
   const offset = now.getTimezoneOffset();
@@ -17,3 +19,5 @@ export function displayDate(dateIso) {
 export function isOverdue(dateIso) {
   return Boolean(dateIso && dateIso < todayIso());
 }
+
+export const { endOfWeekIso, isUpcomingThisWeek } = weekUtils;

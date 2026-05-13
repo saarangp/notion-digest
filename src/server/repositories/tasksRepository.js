@@ -74,6 +74,14 @@ function getTask(db, id) {
   return mapTask(db.prepare(`${TASK_SELECT} WHERE t.id = ?`).get(id));
 }
 
+function getTaskByImport(db, importedFrom, importedId) {
+  return mapTask(
+    db
+      .prepare(`${TASK_SELECT} WHERE t.imported_from = ? AND t.imported_id = ? LIMIT 1`)
+      .get(importedFrom, importedId),
+  );
+}
+
 function listTasks(db, filters = {}) {
   const where = [];
   const params = [];
@@ -158,6 +166,7 @@ function deleteTask(db, id) {
 module.exports = {
   createTask,
   getTask,
+  getTaskByImport,
   listTasks,
   updateTask,
   completeTask,

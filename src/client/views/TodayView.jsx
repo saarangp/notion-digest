@@ -1,7 +1,7 @@
 import EmptyState from "../components/EmptyState.jsx";
 import EasyTaskRow from "../components/EasyTaskRow.jsx";
 import TaskRow from "../components/TaskRow.jsx";
-import { isOverdue, todayIso } from "../dateUtils.js";
+import { isOverdue, isUpcomingThisWeek, todayIso } from "../dateUtils.js";
 
 const EASY_PREVIEW_LIMIT = 3;
 
@@ -22,6 +22,7 @@ export default function TodayView({
   const reviewedTasks = openTasks.filter((task) => !task.needsReview);
   const overdue = reviewedTasks.filter((task) => isOverdue(task.dueDate));
   const dueToday = reviewedTasks.filter((task) => task.dueDate === today);
+  const upcoming = reviewedTasks.filter((task) => isUpcomingThisWeek(task.dueDate, today));
 
   return (
     <section className="view-stack">
@@ -39,6 +40,15 @@ export default function TodayView({
           <TaskSection
             title="Due Today"
             tasks={dueToday}
+            projects={projects}
+            onTaskChange={onTaskChange}
+            onTaskComplete={onTaskComplete}
+            onTaskDelete={onTaskDelete}
+          />
+          <TaskSection
+            title="Upcoming"
+            emptyText="No tasks due later this week."
+            tasks={upcoming}
             projects={projects}
             onTaskChange={onTaskChange}
             onTaskComplete={onTaskComplete}

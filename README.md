@@ -12,7 +12,7 @@ Private local planner backed by SQLite. The app is replacing the old Notion dige
 - Bulk task capture into review
 - Sidebar shell for Today, Bulk Add, Projects, Calendar, Analytics, and Easy
 
-Legacy digest, webhook delivery, Google Calendar scheduling, and automatic rollover are no longer part of the main product path. Notion is retained only as a future migration source.
+Legacy digest, webhook delivery, Google Calendar scheduling, and automatic rollover are no longer part of the main product path. Notion is retained only as a migration source.
 
 ## Development
 
@@ -66,10 +66,30 @@ The current focused tests cover SQLite schema/repository behavior for projects a
 
 ## Notion Import
 
-The planned import command is:
+Configure the source Notion database:
+
+```bash
+NOTION_API_KEY=secret_...
+NOTION_DATABASE_ID=...
+```
+
+Optional property overrides:
+
+```bash
+NOTION_TASK_PROP=Task
+NOTION_PRIORITY_PROP=Priority
+NOTION_STATUS_PROP=Status
+NOTION_DUE_PROP=Due
+NOTION_PROJECT_PROP=Project
+NOTION_COMPLETED_TIME_PROP="Completed time"
+NOTION_COMPLETED_IMPORT_DAYS=90
+CLOSED_STATUS_VALUES=done
+```
+
+Run the migration:
 
 ```bash
 npm run import:notion
 ```
 
-That command is reserved for the Notion migration phase. It should preserve useful Notion property mapping while avoiding webhook, digest, Google Calendar, and scheduling behavior.
+The importer creates projects from Notion `Project` values or resolved relation page titles, imports open tasks, imports recently completed tasks, and skips duplicate Notion page IDs on re-run. Project deadlines are not inferred from Notion.

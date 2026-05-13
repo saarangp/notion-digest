@@ -5,6 +5,8 @@ function mapProject(row) {
     name: row.name,
     color: row.color,
     deadlineDate: row.deadline_date,
+    status: row.status,
+    completedAt: row.completed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
