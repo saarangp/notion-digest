@@ -1,8 +1,11 @@
+import { useState } from "react";
 import EmptyState from "../components/EmptyState.jsx";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export default function CalendarView({ calendar }) {
+export default function CalendarView({ calendar, tasks }) {
+  const [openDate, setOpenDate] = useState(null);
+
   if (!calendar) {
     return (
       <section className="view-stack">
@@ -16,6 +19,7 @@ export default function CalendarView({ calendar }) {
   const taskCounts = keyedByDate(calendar.taskCounts);
   const deadlines = groupedByDate(calendar.deadlines);
   const firstDay = new Date(`${calendar.startDate}T00:00:00`).getDay();
+  const datedTasks = tasks.filter((task) => task.status === "todo" && task.dueDate);
 
   return (
     <section className="view-stack calendar-view">
@@ -30,12 +34,13 @@ export default function CalendarView({ calendar }) {
             date={date}
             isToday={date === calendar.today}
             taskCount={taskCounts.get(date)}
+            tasks={datedTasks.filter((task) => task.dueDate === date)}
             deadlines={deadlines.get(date) || []}
-            inboxCount={calendar.todayInboxCount?.date === date ? calendar.todayInboxCount.count : 0}
+            isOpen={openDate === date}
+            onToggle={() => setOpenDate((current) => (current === date ? null : date))}
           />
         ))}
       </section>
-      <ProjectTimeline bars={calendar.projectBars} startDate={calendar.startDate} endDate={calendar.endDate} />
     </section>
   );
 }
@@ -49,15 +54,14 @@ function ViewHeader({ month }) {
   );
 }
 
-function CalendarDay({ date, isToday, taskCount, deadlines, inboxCount }) {
+function CalendarDay({ date, isToday, taskCount, tasks, deadlines, isOpen, onToggle }) {
   const dayNumber = Number(date.slice(-2));
   return (
     <div className={isToday ? "calendar-day today" : "calendar-day"}>
       <div className="calendar-day-head">
         <span>{dayNumber}</span>
-        {taskCount ? <span className="calendar-count">{taskCount}</span> : null}
+        {taskCount ? <TaskPopover count={taskCount} date={date} tasks={tasks} isOpen={isOpen} onToggle={onToggle} /> : null}
       </div>
-      {inboxCount ? <div className="calendar-inbox">Inbox {inboxCount}</div> : null}
       {deadlines.map(({ project }) => (
         <div className="calendar-deadline" key={project.id}>
           <span style={{ background: project.color }} />
@@ -68,54 +72,38 @@ function CalendarDay({ date, isToday, taskCount, deadlines, inboxCount }) {
   );
 }
 
-function ProjectTimeline({ bars, startDate, endDate }) {
-  if (!bars.length) {
-    return (
-      <section className="calendar-timeline">
-        <div className="section-label">Project Timeline</div>
-        <EmptyState>No dated project deadlines this month.</EmptyState>
-      </section>
-    );
-  }
-
+function TaskPopover({ count, date, tasks, isOpen, onToggle }) {
   return (
-    <section className="calendar-timeline">
-      <div className="section-label">Project Timeline</div>
-      <div className="timeline-rows">
-        {bars.map((bar) => (
-          <ProjectBar key={bar.project.id} bar={bar} startDate={startDate} endDate={endDate} />
+    <details className="calendar-task-popover" open={isOpen}>
+      <summary
+        className="calendar-count"
+        onClick={(event) => {
+          event.preventDefault();
+          onToggle();
+        }}
+      >
+        {count}
+      </summary>
+      <div className="calendar-task-panel">
+        <div className="calendar-task-date">{shortDate(date)}</div>
+        {tasks.map((task) => (
+          <div className="calendar-task-item" key={task.id}>
+            <span className="task-project-dot" style={{ background: task.projectColor || "transparent" }} />
+            <span>{task.title}</span>
+          </div>
         ))}
       </div>
-    </section>
-  );
-}
-
-function ProjectBar({ bar, startDate, endDate }) {
-  const gridColumn = `${dayIndex(bar.startDate, startDate) + 1} / ${dayIndex(bar.endDate, startDate) + 2}`;
-
-  return (
-    <div className="timeline-row">
-      <div className="timeline-project">
-        <span className="project-dot" style={{ background: bar.project.color }} />
-        <span>{bar.project.name}</span>
-      </div>
-      <div className="timeline-track" style={{ "--days": dayIndex(endDate, startDate) + 1 }}>
-        <div className="timeline-bar" style={{ gridColumn, background: bar.project.color }} />
-      </div>
-      <div className="timeline-dates">
-        {shortDate(bar.earliestDueDate)} to {shortDate(bar.deadlineDate)}
-      </div>
-    </div>
+    </details>
   );
 }
 
 function keyedByDate(rows) {
-  return new Map(rows.map((row) => [row.date, row.count]));
+  return new Map((rows || []).map((row) => [row.date, row.count]));
 }
 
 function groupedByDate(rows) {
   const groups = new Map();
-  rows.forEach((row) => {
+  (rows || []).forEach((row) => {
     groups.set(row.date, [...(groups.get(row.date) || []), row]);
   });
   return groups;
@@ -132,10 +120,6 @@ function monthDays(startDate, endDate) {
   }
 
   return days;
-}
-
-function dayIndex(date, startDate) {
-  return Math.round((parseDate(date) - parseDate(startDate)) / 86_400_000);
 }
 
 function monthLabel(month) {

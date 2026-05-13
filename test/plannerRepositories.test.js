@@ -171,6 +171,7 @@ test("easy task listing supports open and completed filters", () => {
 test("calendar data creates project bars only for projects with deadlines", () => {
   const db = testDb();
   const withDeadline = createProject(db, { name: "Paper", deadlineDate: "2026-05-28" });
+  const deadlineOnly = createProject(db, { name: "Deadline Only", deadlineDate: "2026-05-20" });
   const withoutDeadline = createProject(db, { name: "Loose Admin" });
 
   createTask(db, {
@@ -188,10 +189,15 @@ test("calendar data creates project bars only for projects with deadlines", () =
 
   const calendar = listCalendarData(db, { month: "2026-05", today: "2026-05-13" });
 
-  assert.equal(calendar.projectBars.length, 1);
-  assert.equal(calendar.projectBars[0].project.id, withDeadline.id);
-  assert.equal(calendar.projectBars[0].startDate, "2026-05-14");
-  assert.equal(calendar.projectBars[0].endDate, "2026-05-28");
+  assert.equal(calendar.projectBars.length, 2);
+  assert.equal(calendar.projectBars[0].project.id, deadlineOnly.id);
+  assert.equal(calendar.projectBars[0].type, "deadline");
+  assert.equal(calendar.projectBars[0].startDate, "2026-05-20");
+  assert.equal(calendar.projectBars[0].endDate, "2026-05-20");
+  assert.equal(calendar.projectBars[1].project.id, withDeadline.id);
+  assert.equal(calendar.projectBars[1].type, "span");
+  assert.equal(calendar.projectBars[1].startDate, "2026-05-14");
+  assert.equal(calendar.projectBars[1].endDate, "2026-05-28");
 });
 
 test("calendar project bars use earliest open dated task and ignore done tasks", () => {

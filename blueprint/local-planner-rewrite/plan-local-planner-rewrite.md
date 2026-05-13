@@ -269,6 +269,18 @@
   - Confirm completed easy tasks appear in heatmap activity.
   - Confirm calendar reflects project deadline and task counts.
 
+## Implementation notes
+
+- Phase 4 Calendar timeline is implemented.
+  - Backend: `src/server/repositories/calendarRepository.js` derives current-month calendar data.
+  - API: `GET /api/calendar` returns task counts, project deadlines, project bars, and today Inbox count.
+  - UI: `src/client/views/CalendarView.jsx` renders the current month without inline task titles.
+  - Tests: `test/plannerRepositories.test.js` covers calendar bar generation, task counts, Inbox count, and title omission.
+- Local run command:
+  - Terminal 1: `npm run dev:server`
+  - Terminal 2: `npm run dev`
+  - Open the Vite URL shown by `npm run dev`, usually `http://127.0.0.1:5173`.
+
 ## Open questions
 
 - Which SQLite package should the implementation use after checking Node, Vite, and future Tauri constraints?

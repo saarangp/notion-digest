@@ -1,6 +1,6 @@
 import EmptyState from "../components/EmptyState.jsx";
 
-export default function ProjectsView({ projects, summaries, onCreateProject, onProjectChange }) {
+export default function ProjectsView({ projects, summaries, tasks, onCreateProject, onProjectChange }) {
   async function handleSubmit(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -15,6 +15,7 @@ export default function ProjectsView({ projects, summaries, onCreateProject, onP
   }
 
   const rows = summaries.length ? summaries : projects;
+  const progressRows = projectProgress(rows, tasks);
 
   return (
     <section className="view-stack">
@@ -22,6 +23,7 @@ export default function ProjectsView({ projects, summaries, onCreateProject, onP
         <h2>Projects</h2>
         <p>Manual project deadlines and open task pressure.</p>
       </header>
+      <ProjectProgress rows={progressRows} />
       <form className="project-form" onSubmit={handleSubmit}>
         <input name="name" className="field-control" placeholder="Project name" />
         <input name="deadlineDate" className="field-control" type="date" />
@@ -36,6 +38,29 @@ export default function ProjectsView({ projects, summaries, onCreateProject, onP
           ))
         )}
       </section>
+    </section>
+  );
+}
+
+function ProjectProgress({ rows }) {
+  if (!rows.length) return null;
+
+  return (
+    <section className="project-progress-list">
+      {rows.map((row) => (
+        <div className="project-progress-row" key={row.project.id}>
+          <div className="project-progress-name">
+            <span className="project-dot" style={{ background: row.project.color }} />
+            <span>{row.project.name}</span>
+          </div>
+          <div className="project-progress-track" aria-label={`${row.project.name} ${row.completionPercent}% complete`}>
+            <span style={{ width: `${row.completionPercent}%`, background: row.project.color }} />
+          </div>
+          <div className="project-progress-meta">
+            {row.totalTaskCount ? `${row.doneTaskCount}/${row.totalTaskCount} done` : "No tasks"}
+          </div>
+        </div>
+      ))}
     </section>
   );
 }
@@ -68,4 +93,20 @@ function ProjectRow({ project, onProjectChange }) {
       <div className="project-next">{project.nextDueDate || "No dated tasks"}</div>
     </div>
   );
+}
+
+function projectProgress(projects, tasks) {
+  return projects
+    .filter((project) => project.deadlineDate)
+    .map((project) => {
+      const projectTasks = tasks.filter((task) => task.projectId === project.id);
+      const doneTaskCount = projectTasks.filter((task) => task.status === "done").length;
+      const totalTaskCount = projectTasks.length;
+      return {
+        project,
+        doneTaskCount,
+        totalTaskCount,
+        completionPercent: totalTaskCount ? Math.round((doneTaskCount / totalTaskCount) * 100) : 0,
+      };
+    });
 }

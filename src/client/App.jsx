@@ -132,6 +132,7 @@ export default function App() {
           <ProjectsView
             projects={projects}
             summaries={summaries}
+            tasks={tasks}
             onCreateProject={handleCreateProject}
             onProjectChange={handleProjectChange}
           />
@@ -147,7 +148,7 @@ export default function App() {
       );
     }
     if (activeView === "Calendar") {
-      return <CalendarView calendar={calendar} />;
+      return <CalendarView calendar={calendar} tasks={tasks} />;
     }
     if (activeView === "Easy") {
       return (

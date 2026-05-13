@@ -29,6 +29,11 @@ function listCalendarData(db, options = {}) {
   const month = options.month || currentMonth(today);
   const { start, end } = monthBounds(month);
 
+  const projectBars = [
+    ...listProjectBars(db, start, end),
+    ...listDeadlineOnlyBars(db, start, end),
+  ].sort((a, b) => a.deadlineDate.localeCompare(b.deadlineDate) || a.project.name.localeCompare(b.project.name));
+
   return {
     month,
     startDate: start,
@@ -36,7 +41,7 @@ function listCalendarData(db, options = {}) {
     today,
     taskCounts: listTaskCounts(db, start, end),
     deadlines: listDeadlines(db, start, end),
-    projectBars: listProjectBars(db, start, end),
+    projectBars,
     todayInboxCount: countTodayInbox(db, today),
   };
 }
@@ -95,6 +100,34 @@ function listProjectBars(db, start, end) {
       endDate: clampDate(row.deadline_date, start, end),
       earliestDueDate: row.earliest_due_date,
       deadlineDate: row.deadline_date,
+      type: "span",
+    }));
+}
+
+function listDeadlineOnlyBars(db, start, end) {
+  return db
+    .prepare(`
+      SELECT p.*
+      FROM projects p
+      WHERE p.deadline_date BETWEEN ? AND ?
+        AND NOT EXISTS (
+          SELECT 1
+          FROM tasks t
+          WHERE t.project_id = p.id
+            AND t.status = 'todo'
+            AND t.due_date IS NOT NULL
+            AND t.due_date <= p.deadline_date
+        )
+      ORDER BY p.deadline_date, lower(p.name)
+    `)
+    .all(start, end)
+    .map((row) => ({
+      project: mapProject(row),
+      startDate: row.deadline_date,
+      endDate: row.deadline_date,
+      earliestDueDate: null,
+      deadlineDate: row.deadline_date,
+      type: "deadline",
     }));
 }
 

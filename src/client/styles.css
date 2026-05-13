@@ -187,6 +187,11 @@ textarea {
   grid-template-columns: 18px minmax(160px, 1fr) minmax(90px, 120px) 84px 18px 28px;
 }
 
+.project-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 190px 96px;
+}
+
 .easy-row {
   display: grid;
   grid-template-columns: 18px minmax(160px, 1fr) minmax(110px, 160px) 28px;
@@ -607,10 +612,11 @@ textarea {
 .calendar-weekday,
 .calendar-day,
 .calendar-count,
-.calendar-inbox,
 .calendar-deadline,
-.timeline-project,
-.timeline-dates {
+.calendar-task-panel,
+.calendar-task-popover,
+.project-progress-name,
+.project-progress-meta {
   font-family: system-ui, sans-serif;
 }
 
@@ -629,6 +635,7 @@ textarea {
   min-height: 104px;
   min-width: 0;
   padding: 8px;
+  position: relative;
 }
 
 .calendar-day:nth-of-type(8) {
@@ -654,8 +661,11 @@ textarea {
 
 .calendar-count {
   background: var(--surface2);
+  border: 0;
   border-radius: 999px;
   color: var(--text2);
+  cursor: pointer;
+  display: inline-block;
   font-size: 11px;
   line-height: 1;
   min-width: 22px;
@@ -663,17 +673,52 @@ textarea {
   text-align: center;
 }
 
-.calendar-inbox {
-  background: var(--review-bg);
-  border: 1px solid #e0c38c;
-  border-radius: 999px;
-  color: var(--review);
-  display: inline-block;
-  font-size: 11px;
-  margin-bottom: 5px;
-  max-width: 100%;
+.calendar-task-popover {
+  position: relative;
+}
+
+.calendar-task-popover summary {
+  list-style: none;
+}
+
+.calendar-task-popover summary::-webkit-details-marker {
+  display: none;
+}
+
+.calendar-task-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 24px rgba(28, 26, 23, 0.14);
+  min-width: 220px;
+  padding: 9px;
+  position: absolute;
+  right: 0;
+  top: 26px;
+  z-index: 5;
+}
+
+.calendar-task-date {
+  color: var(--text3);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.calendar-task-item {
+  align-items: center;
+  color: var(--text2);
+  display: grid;
+  font-size: 12px;
+  gap: 7px;
+  grid-template-columns: 9px minmax(0, 1fr);
+  line-height: 1.25;
+  margin-top: 5px;
+}
+
+.calendar-task-item span:last-child {
   overflow: hidden;
-  padding: 3px 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -696,54 +741,54 @@ textarea {
   width: 7px;
 }
 
-.calendar-timeline {
-  margin-top: 4px;
-}
-
-.timeline-rows {
+.project-progress-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
+  margin: -14px 0 20px;
 }
 
-.timeline-row {
+.project-progress-row {
   align-items: center;
   display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) 110px;
+  gap: 10px;
+  grid-template-columns: minmax(100px, 160px) minmax(0, 1fr) 86px;
 }
 
-.timeline-project {
+.project-progress-name {
   align-items: center;
   display: flex;
-  gap: 8px;
+  font-size: 12px;
+  gap: 7px;
   min-width: 0;
 }
 
-.timeline-project span:last-child {
+.project-progress-name span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.timeline-track {
-  background: var(--surface);
+.project-progress-track {
+  background: rgba(255, 255, 255, 0.62);
   border: 1px solid var(--border);
   border-radius: 999px;
-  display: grid;
-  grid-template-columns: repeat(var(--days), minmax(0, 1fr));
-  height: 16px;
+  height: 10px;
   overflow: hidden;
 }
 
-.timeline-bar {
-  border-radius: 999px;
-  min-width: 6px;
-  opacity: 0.76;
+.project-progress-track span {
+  display: block;
+  height: 100%;
 }
 
-.timeline-dates {
+.project-progress-track span,
+.project-progress-track {
+  border-radius: 999px;
+}
+
+.project-progress-meta {
   color: var(--text3);
-  font-size: 11px;
+  font-size: 10px;
   text-align: right;
   white-space: nowrap;
 }
@@ -911,16 +956,22 @@ textarea {
   }
 
   .calendar-deadline,
-  .calendar-inbox {
+  .calendar-task-item {
     font-size: 10px;
   }
 
-  .timeline-row {
-    align-items: start;
+  .calendar-task-panel {
+    left: 0;
+    min-width: 180px;
+    right: auto;
+  }
+
+  .project-progress-row {
+    gap: 5px;
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .timeline-dates {
+  .project-progress-meta {
     text-align: left;
   }
 }
