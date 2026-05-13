@@ -23,8 +23,8 @@ export default function TasksView({ projects, tasks, onCreateTask, onTaskChange,
   return (
     <section className="view-stack">
       <header className="view-header">
-        <h2>Manual Tasks</h2>
-        <p>Phase 1 persisted task CRUD.</p>
+        <h2>Tasks</h2>
+        <p>Add and edit project tasks.</p>
       </header>
       <form className="task-form" onSubmit={handleSubmit}>
         <input name="title" className="field-control title-field" placeholder="Task title" />

@@ -5,7 +5,7 @@ export default function PlaceholderView({ title }) {
         <h2>{title}</h2>
         <p>This view is reserved for the next implementation phase.</p>
       </header>
-      <div className="empty-state">Phase 1 focuses on the shell, projects, and task CRUD.</div>
+      <div className="empty-state">This section is not implemented yet.</div>
     </section>
   );
 }

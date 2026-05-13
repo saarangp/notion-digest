@@ -19,10 +19,10 @@ function normalizeNeedsReview(input) {
   return input.dueDate && input.priority ? 0 : 1;
 }
 
-function reviewState(dueDate, priority, requestedNeedsReview) {
+function reviewState(dueDate, priority, existingNeedsReview, requestedNeedsReview) {
   if (dueDate && priority) return 0;
-  if (requestedNeedsReview !== undefined) return requestedNeedsReview ? 1 : 0;
-  return 1;
+  if (requestedNeedsReview) return 1;
+  return existingNeedsReview ? 1 : 0;
 }
 
 function createTask(db, input) {
@@ -132,7 +132,7 @@ function updateTask(db, id, input) {
     dueDate,
     priority,
     status,
-    reviewState(dueDate, priority, input.needsReview),
+    reviewState(dueDate, priority, existing.needsReview, input.needsReview),
     input.estimatedMinutes === undefined ? existing.estimatedMinutes : input.estimatedMinutes || null,
     completedAt,
     timestamp,

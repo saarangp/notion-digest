@@ -1,14 +1,19 @@
+import { useState } from "react";
+
 export default function BulkAddView({ projects, onCreateTask }) {
+  const [capturedTasks, setCapturedTasks] = useState([]);
+
   async function createFromForm(form) {
     const title = form.elements.title.value.trim();
     if (!title) return;
 
-    await onCreateTask({
+    const task = await onCreateTask({
       title,
       projectId: form.elements.projectId.value || null,
       needsReview: true,
     });
-    form.reset();
+    form.elements.title.value = "";
+    setCapturedTasks((current) => [task, ...current].slice(0, 6));
   }
 
   async function handleSubmit(event) {
@@ -46,6 +51,19 @@ export default function BulkAddView({ projects, onCreateTask }) {
           onKeyDown={handleKeyDown}
         />
       </form>
+      {capturedTasks.length ? (
+        <section className="list-section">
+          <div className="section-label">Captured for Review</div>
+          <div className="capture-list">
+            {capturedTasks.map((task) => (
+              <div className="capture-row" key={task.id}>
+                <span>{task.title}</span>
+                <span>{task.projectName || "No project"}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

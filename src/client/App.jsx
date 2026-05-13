@@ -45,8 +45,9 @@ export default function App() {
   }
 
   async function handleCreateTask(input) {
-    await createTask(input);
+    const task = await createTask(input);
     await refreshData();
+    return task;
   }
 
   async function handleTaskChange(task, patch) {

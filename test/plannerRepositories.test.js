@@ -63,6 +63,28 @@ test("bulk-style tasks start in review and clear only after due date and priorit
   assert.equal(withPriority.needsReview, false);
 });
 
+test("review tasks cannot be cleared explicitly while review fields are missing", () => {
+  const db = testDb();
+  const task = createTask(db, { title: "Decide owner", needsReview: true });
+
+  const stillReview = updateTask(db, task.id, { needsReview: false });
+  assert.equal(stillReview.needsReview, true);
+
+  const withPriorityOnly = updateTask(db, task.id, {
+    priority: "Medium",
+    needsReview: false,
+  });
+  assert.equal(withPriorityOnly.needsReview, true);
+});
+
+test("manual tasks without review stay out of review on unrelated edits", () => {
+  const db = testDb();
+  const task = createTask(db, { title: "Someday", needsReview: false });
+
+  const renamed = updateTask(db, task.id, { title: "Someday maybe" });
+  assert.equal(renamed.needsReview, false);
+});
+
 test("task completion and reopen preserve direct status semantics", () => {
   const db = testDb();
   const task = createTask(db, {
