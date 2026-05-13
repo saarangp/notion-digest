@@ -9,6 +9,10 @@ const {
 } = require("../src/server/repositories/projectsRepository");
 const { listCalendarData } = require("../src/server/repositories/calendarRepository");
 const {
+  listCompletedArchive,
+  listCompletionHeatmap,
+} = require("../src/server/repositories/analyticsRepository");
+const {
   completeTask,
   createTask,
   deleteTask,
@@ -275,4 +279,121 @@ test("calendar includes deadline markers without task titles", () => {
   assert.equal(calendar.deadlines[0].date, "2026-05-20");
   assert.equal(calendar.deadlines[0].project.name, "Defense");
   assert.equal(JSON.stringify(calendar).includes("Private task title"), false);
+});
+
+test("analytics heatmap groups completed regular and easy tasks by local completion date", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Writing" });
+
+  createTask(db, {
+    title: "Finish draft",
+    projectId: project.id,
+    status: "done",
+    completedAt: "2026-05-02T12:00:00.000Z",
+  });
+  createTask(db, {
+    title: "Send draft",
+    status: "done",
+    completedAt: "2026-05-02T20:00:00.000Z",
+  });
+  createEasyTask(db, {
+    title: "Clear desk",
+    done: true,
+    completedAt: "2026-05-02T21:00:00.000Z",
+  });
+  createEasyTask(db, {
+    title: "Later admin",
+    done: true,
+    completedAt: "2026-05-03T12:00:00.000Z",
+  });
+  createTask(db, {
+    title: "Open item",
+    completedAt: "2026-05-02T12:00:00.000Z",
+  });
+
+  const heatmap = listCompletionHeatmap(db, {
+    startDate: "2026-05-02",
+    endDate: "2026-05-03",
+  });
+
+  assert.deepEqual(heatmap, [
+    { date: "2026-05-02", count: 3 },
+    { date: "2026-05-03", count: 1 },
+  ]);
+});
+
+test("analytics completed archive includes regular and easy tasks with project metadata", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Admin", color: "#123456" });
+
+  const regular = createTask(db, {
+    title: "Submit receipt",
+    projectId: project.id,
+    status: "done",
+    completedAt: "2026-05-03T12:00:00.000Z",
+  });
+  const easy = createEasyTask(db, {
+    title: "Email office",
+    done: true,
+    completedAt: "2026-05-04T12:00:00.000Z",
+  });
+
+  const archive = listCompletedArchive(db);
+
+  assert.equal(archive.length, 2);
+  assert.deepEqual(archive[0], {
+    id: easy.id,
+    title: "Email office",
+    projectId: null,
+    projectName: null,
+    projectColor: null,
+    completedAt: "2026-05-04T12:00:00.000Z",
+    completedDate: "2026-05-04",
+    type: "easy",
+  });
+  assert.deepEqual(archive[1], {
+    id: regular.id,
+    title: "Submit receipt",
+    projectId: project.id,
+    projectName: "Admin",
+    projectColor: "#123456",
+    completedAt: "2026-05-03T12:00:00.000Z",
+    completedDate: "2026-05-03",
+    type: "task",
+  });
+});
+
+test("analytics completed archive search matches title, project, and type", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Dissertation" });
+
+  createTask(db, {
+    title: "Archive notes",
+    projectId: project.id,
+    status: "done",
+    completedAt: "2026-05-03T12:00:00.000Z",
+  });
+  createTask(db, {
+    title: "Pay invoice",
+    status: "done",
+    completedAt: "2026-05-04T12:00:00.000Z",
+  });
+  createEasyTask(db, {
+    title: "Stretch",
+    done: true,
+    completedAt: "2026-05-05T12:00:00.000Z",
+  });
+
+  assert.deepEqual(
+    listCompletedArchive(db, { search: "notes" }).map((row) => row.title),
+    ["Archive notes"],
+  );
+  assert.deepEqual(
+    listCompletedArchive(db, { search: "dissertation" }).map((row) => row.title),
+    ["Archive notes"],
+  );
+  assert.deepEqual(
+    listCompletedArchive(db, { search: "easy" }).map((row) => row.title),
+    ["Stretch"],
+  );
 });

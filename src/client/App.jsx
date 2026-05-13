@@ -18,6 +18,7 @@ import {
   updateTask,
 } from "./api.js";
 import BulkAddView from "./views/BulkAddView.jsx";
+import AnalyticsView from "./views/AnalyticsView.jsx";
 import CalendarView from "./views/CalendarView.jsx";
 import EasyView from "./views/EasyView.jsx";
 import PlaceholderView from "./views/PlaceholderView.jsx";
@@ -32,6 +33,7 @@ export default function App() {
   const [tasks, setTasks] = useState([]);
   const [easyTasks, setEasyTasks] = useState([]);
   const [calendar, setCalendar] = useState(null);
+  const [dataRevision, setDataRevision] = useState(0);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -51,6 +53,7 @@ export default function App() {
     setTasks(nextTasks);
     setEasyTasks(nextEasyTasks);
     setCalendar(nextCalendar);
+    setDataRevision((current) => current + 1);
     setError("");
   }
 
@@ -150,6 +153,9 @@ export default function App() {
     if (activeView === "Calendar") {
       return <CalendarView calendar={calendar} tasks={tasks} />;
     }
+    if (activeView === "Analytics") {
+      return <AnalyticsView refreshKey={dataRevision} />;
+    }
     if (activeView === "Easy") {
       return (
         <EasyView
@@ -163,7 +169,7 @@ export default function App() {
       );
     }
     return <PlaceholderView title={activeView} />;
-  }, [activeView, projects, summaries, tasks, easyTasks, calendar]);
+  }, [activeView, projects, summaries, tasks, easyTasks, calendar, dataRevision]);
 
   return (
     <div className="shell">

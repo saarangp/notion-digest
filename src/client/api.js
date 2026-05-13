@@ -32,6 +32,16 @@ export async function listCalendar(month) {
   return body.calendar;
 }
 
+export async function listAnalytics(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.search) params.set("search", filters.search);
+  if (filters.startDate) params.set("startDate", filters.startDate);
+  if (filters.endDate) params.set("endDate", filters.endDate);
+  const suffix = params.toString() ? `?${params}` : "";
+  const body = await request(`/analytics${suffix}`);
+  return body.analytics;
+}
+
 export async function createProject(input) {
   const body = await request("/projects", {
     method: "POST",

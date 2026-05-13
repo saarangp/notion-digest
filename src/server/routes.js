@@ -1,4 +1,5 @@
 const { createProject, deleteProject, listProjectSummaries, listProjects, updateProject } = require("./repositories/projectsRepository");
+const { listCompletedArchive, listCompletionHeatmap } = require("./repositories/analyticsRepository");
 const { listCalendarData } = require("./repositories/calendarRepository");
 const { completeTask, createTask, deleteTask, listTasks, reopenTask, updateTask } = require("./repositories/tasksRepository");
 const {
@@ -65,6 +66,21 @@ async function handleApi(req, res, db) {
     if (url.pathname === "/api/calendar") {
       sendJson(res, 200, {
         calendar: listCalendarData(db, { month: url.searchParams.get("month") || undefined }),
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/analytics") {
+      sendJson(res, 200, {
+        analytics: {
+          heatmap: listCompletionHeatmap(db, {
+            startDate: url.searchParams.get("startDate") || undefined,
+            endDate: url.searchParams.get("endDate") || undefined,
+          }),
+          archive: listCompletedArchive(db, {
+            search: url.searchParams.get("search") || "",
+          }),
+        },
       });
       return;
     }
