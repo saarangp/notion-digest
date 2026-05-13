@@ -2,67 +2,45 @@
 
 ## Project Overview
 
-`notion-digest` is a Node.js application that pulls tasks from a Notion database, scores and ranks them deterministically, and delivers a structured daily digest to Discord or Slack. It also supports a Discord slash-command bot for interactive task actions (reschedule, defer, mark done).
+`notion-digest` is now a private local planner app. The main product is a React + Vite client talking to a local Node API backed by SQLite.
+
+Notion is only a migration source. Digest delivery, Discord/Slack webhooks, Google Calendar scheduling, AI planning, and automatic rollover are removed from the active product path.
 
 ## Architecture
 
-- **`src/index.js`** — Entry point. Reads `APP_MODE` and `MODE` env vars, then delegates to digest or bot services.
-- **`src/digestService.js`** — Notion ingest, scoring/ranking, capacity check (Google Calendar), optional Gemini AI plan, and digest rendering.
-- **`src/discordBotService.js`** — Discord slash commands (`/digest`, `/evening`, `/reschedule`, `/defer`, `/done`), embeds, action flows, confirm/cancel safety.
-- **`src/botActions.js`** — Action validation and Notion property update payload builders.
-- **`src/botStateStore.js`** — Pending action persistence with TTL.
-- **`src/config.js`** — Env var parsing with typed defaults. All runtime configuration lives here.
-- **`src/logger.js`** — Logging utilities.
-- **`.github/workflows/notion-digest.yml`** — Scheduled digest automation (GitHub Actions).
+- `src/client/` — React client, view shell, API wrapper, styling, and planner views.
+- `src/server/` — Local HTTP API, SQLite connection, schema, and repositories.
+- `src/importers/` — Notion migration configuration and mapping code.
+- `test/` — Node test runner tests for repositories and import mapping.
+- `.data/planner.sqlite` — Default local development database, ignored by git.
 
-## Runtime Modes
+## Commands
 
-Set `APP_MODE` to control what runs:
-- `digest` — Run the webhook digest flow and exit.
-- `bot` — Run the Discord bot only (long-lived process).
-- `both` — Run the digest flow, then keep the bot running.
+```bash
+npm run dev:server
+npm run dev
+npm run build
+npm test
+```
 
-Set `MODE` to control which digest is sent:
-- `morning` / `evening` / `both`
+The Vite dev server proxies `/api` to `http://127.0.0.1:4321`.
 
-## Language and Conventions
+## Conventions
 
-- **Runtime**: Node.js >= 20 (CommonJS modules — use `require`/`module.exports`).
-- **No build step** — source is run directly with `node`.
-- **No linter or formatter is configured** — match the existing code style (2-space indentation, single quotes for strings).
-- **Environment variables** are parsed and defaulted in `src/config.js`. Add new env vars there; never read `process.env` directly in other modules.
-- **Deterministic behavior** — scoring and bucketing must remain deterministic; avoid randomness or adaptive heuristics.
-- **All Notion mutations require explicit user confirmation** in the bot action flow — do not bypass the confirm step.
+- Runtime is Node.js >= 20.
+- Server code is CommonJS.
+- Client code is React modules under `src/client/`.
+- Keep functions small and direct.
+- Avoid unnecessary abstractions and nested functions unless they make ownership clearer.
+- Keep Notion mapping in importer-owned modules, not in the planner runtime.
+- Do not reintroduce webhook delivery, scheduler modes, Google Calendar automation, or digest scoring into the main app.
 
 ## Testing
 
-Run the test suite with:
+Use Node's built-in test runner:
 
 ```bash
 npm test
 ```
 
-Tests use Node.js's built-in test runner (`node --test`). Test files live in `test/` and follow the naming pattern `*.test.js`. New tests should use `node:test` and `node:assert/strict`.
-
-## Required Environment Variables
-
-See `.env.example` for the full list. Minimum required:
-- `NOTION_API_KEY`
-- `NOTION_DATABASE_ID`
-- A webhook URL (`DISCORD_WEBHOOK_URL` or `SLACK_WEBHOOK_URL`) for digest mode.
-
-For the Discord bot: `DISCORD_BOT_TOKEN`, `DISCORD_APP_ID`, `DISCORD_GUILD_ID`.
-
-## Dry Run
-
-Set `DRY_RUN=1` to log payloads instead of posting webhooks or mutating Notion. Always use dry-run when testing locally:
-
-```bash
-DRY_RUN=1 MODE=morning node src/index.js
-```
-
-## Common Patterns
-
-- Parse env integers with the exported `parseInteger(raw, fallback)` from `src/config.js`.
-- New bot actions follow the pattern in `src/botActions.js`: validate inputs → build a Notion property update object → return it for the caller to apply after confirmation.
-- Avoid adding new npm dependencies unless strictly necessary.
+Add focused tests for repository, storage, and importer behavior when those areas change.

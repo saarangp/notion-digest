@@ -70,7 +70,7 @@ DUE SOON (3):
 ...
 ```
 
-Hard deadline inference: any task whose title contains keywords like "submission", "deadline", "due", "exam", "interview", "launch", "release", "ship" is flagged `[HARD DEADLINE]` in the output. The agent prompt instructs Claude to treat these as immovable.
+Hard deadline detection: the formatter checks for a `Hard Deadline` checkbox property on each Notion task. If checked, the task is flagged `[HARD DEADLINE]` in the output. The agent prompt instructs Claude to treat these as immovable. No keyword inference — explicit checkbox only.
 
 **Interface:** Reads JSON array of Notion pages from stdin, writes compact text to stdout. No API keys required — auth is handled upstream by the MCP caller.
 
@@ -182,18 +182,13 @@ Files retained and reused:
 
 ---
 
-## Hard Deadline Inference
+## Hard Deadline Detection
 
-The formatter flags tasks `[HARD DEADLINE]` if the title (lowercased) contains any of:
-
-```
-submission, deadline, due date, exam, interview, launch, release, ship, deploy,
-present, presentation, demo, conference, application, final, last day
-```
+Add a `Hard Deadline` checkbox property to the Notion task database. The formatter reads this property and flags any checked task as `[HARD DEADLINE]` in the compact output.
 
 The agent prompt explicitly instructs Claude: tasks marked `[HARD DEADLINE]` must appear in the top focus list regardless of score, and must not be silently deferred in the evening sweep — they get an escalation flag instead.
 
-Users can also add an explicit `Hard Deadline` checkbox property to their Notion database. The formatter checks for this property and flags it unconditionally if set.
+No keyword inference. Explicit checkbox only — keeps it reliable regardless of task naming conventions.
 
 ---
 
@@ -223,6 +218,6 @@ At Haiku pricing this is ~$0.0004/run, ~$0.03/month. Negligible on Pro plan.
 ## Open Questions / Future Work
 
 - Connect Google Calendar MCP at https://claude.ai/settings/connectors before creating morning agent
-- Notion `Hard Deadline` checkbox property is optional — add it to the database schema if explicit flagging is needed
-- Agent prompts will need tuning after first few runs — start with Sonnet for quality, switch to Haiku once output is dialed in
+- Add `Hard Deadline` checkbox property to the Notion task database before first run
+- Agent prompts will need tuning after first few runs — start with Haiku (token-efficient), upgrade to Sonnet if output quality needs improvement
 - Could add a `src/docs/cowork-guide.md` describing patterns for on-demand sessions (job search spreadsheet, bulk task import, etc.)

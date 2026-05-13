@@ -1,0 +1,276 @@
+# Local Planner Rewrite
+
+## Overview
+
+- Replace the current Notion digest automation with a private local planner app.
+- Keep Notion only as a one-time migration source.
+- Remove Discord, Slack, Google Calendar, Pomodoro, digest, and scheduling behavior from the main product.
+- Use SQLite as the app source of truth.
+- Build a React + Vite local web app first.
+- Keep backend and storage boundaries clean so a Tauri Mac app can be added later.
+- Optimize for low-friction task capture, project visibility, review, and completion history.
+- Use a clean, minimal visual style similar to `Downloads/planner.html`.
+- Render and inspect the UI during implementation, then iterate on spacing, density, and readability.
+- Defer JSON export/import, AI rewriting, Obsidian, and Markdown export until after the core UX works.
+
+## Expected behavior
+
+- The app runs locally on the user's Mac.
+- Navigation uses a persistent sidebar.
+- Sidebar items are Today, Bulk Add, Projects, Calendar, Analytics, and Easy.
+- UI styling is quiet, minimal, and work-focused.
+- Layouts prioritize dense but readable information over decorative surfaces.
+- Common controls are inline and fast to use.
+- Text and controls do not overlap on desktop or mobile-sized viewports.
+- Today shows overdue tasks, due-today tasks, and Inbox tasks that need review.
+- Bulk Add lets the user select a project and enter many todos quickly.
+- Pressing Enter in Bulk Add creates a real task immediately.
+- Bulk-added tasks start with `needs_review=true`.
+- Inbox tasks remain in Today until they have both a due date and priority.
+- Task status stays simple: `todo` or `done`.
+- Common task fields are editable inline.
+- A task can be marked done from task lists.
+- Completed tasks remain available in the completed archive.
+- Deleting an individual task is a hard delete.
+- Projects list shows project deadline, open task count, and next due task.
+- Project deadlines are set manually.
+- Project colors are auto-assigned from a fixed palette.
+- Project colors can be edited later.
+- Calendar shows a current-month project timeline inspired by `Downloads/phd_calendar_bars.html`.
+- Project bars span earliest open task due date through explicit project deadline.
+- Projects without an explicit deadline do not show a project bar.
+- Calendar cells show project deadlines and task counts per day.
+- Calendar does not show every task title inline.
+- Inbox tasks with no due date do not appear as dated work.
+- Calendar can show an Inbox count on today until those tasks are reviewed.
+- Analytics includes a GitHub-style completion heatmap.
+- Heatmap counts number of tasks completed per day.
+- Analytics includes a searchable completed task archive.
+- Easy tasks are separate lightweight items.
+- Easy tasks have no due date or priority.
+- Easy tasks can optionally belong to a project.
+- Notion import is run from the CLI, likely `npm run import:notion`.
+- Notion import creates projects from unique Notion `Project` values or resolved relation names.
+- Notion import imports completed tasks only from a recent window, such as the last 90 days, if available.
+- Project deadlines are not inferred from imported Notion data.
+
+## Implementation plan
+
+- Replace the repo purpose in `README.md`.
+  - Describe the local planner.
+  - Document local dev commands.
+  - Document the Notion import command.
+  - Mark legacy digest/webhook/calendar behavior as removed.
+- Update `package.json`.
+  - Add Vite React app scripts.
+  - Add local API server scripts.
+  - Add `import:notion`.
+  - Remove main user-facing digest scripts.
+  - Keep test script.
+- Add frontend app under `src/client/`.
+  - `src/client/main.jsx`: React entrypoint.
+  - `src/client/App.jsx`: app shell and route/view selection.
+  - `src/client/styles.css`: global layout, typography, colors, and view styles.
+  - `src/client/api.js`: typed fetch wrapper for local backend endpoints.
+  - `src/client/dateUtils.js`: local date helpers shared by views.
+- Establish frontend design rules.
+  - Use a restrained palette inspired by `Downloads/planner.html`.
+  - Keep cards compact and avoid nested card layouts.
+  - Prefer inline controls for common task edits.
+  - Keep the sidebar and primary views visually calm.
+  - Verify rendered UI and iterate before calling v1 complete.
+- Add app views under `src/client/views/`.
+  - `TodayView.jsx`: overdue, due-today, and Inbox sections.
+  - `BulkAddView.jsx`: project selector, entry input, and review queue handoff.
+  - `ProjectsView.jsx`: project summary list with deadline, open count, and next due task.
+  - `CalendarView.jsx`: current-month timeline with project bars, deadlines, and task counts.
+  - `AnalyticsView.jsx`: completion heatmap and searchable completed archive.
+  - `EasyView.jsx`: lightweight easy task list.
+- Add reusable components under `src/client/components/`.
+  - `Sidebar.jsx`: primary navigation.
+  - `TaskRow.jsx`: inline task title, due date, priority, done, and delete controls.
+  - `InboxTaskRow.jsx`: review-focused row requiring due date and priority.
+  - `ProjectSummaryRow.jsx`: project list row.
+  - `Heatmap.jsx`: completion heatmap.
+  - `CalendarTimeline.jsx`: month grid and project bar renderer.
+  - `TaskCountBadge.jsx`: compact per-day count display.
+  - `EmptyState.jsx`: quiet empty-state message.
+- Add local backend under `src/server/`.
+  - `src/server/index.js`: local HTTP server.
+  - `src/server/routes.js`: API route registration.
+  - `src/server/db.js`: SQLite connection lifecycle.
+  - `src/server/schema.js`: schema creation and migrations.
+  - `src/server/repositories/projectsRepository.js`: project CRUD and derived project summaries.
+  - `src/server/repositories/tasksRepository.js`: task CRUD, inline updates, review clearing, completion, and deletion.
+  - `src/server/repositories/easyTasksRepository.js`: easy task CRUD and completion.
+  - `src/server/repositories/analyticsRepository.js`: completion counts and completed task search.
+  - `src/server/repositories/importsRepository.js`: import metadata persistence.
+- Add SQLite database file location configuration.
+  - Default to a local app data path inside the repo for development.
+  - Use a path like `.data/planner.sqlite` for the development database.
+  - Allow override with an environment variable.
+  - Ensure the database file is ignored by git.
+  - Defer final SQLite package choice until implementation checks Node and Vite constraints.
+- Add database tables.
+  - `projects`: id, name, color, deadline_date, created_at, updated_at.
+  - `tasks`: id, title, project_id, due_date, priority, status, needs_review, estimated_minutes, completed_at, created_at, updated_at, imported_from, imported_id, imported_url.
+  - `easy_tasks`: id, title, project_id, done, completed_at, created_at, updated_at.
+  - `imports`: id, source, started_at, finished_at, imported_count, metadata_json.
+- Add derived backend queries.
+  - Today tasks: overdue or due today, excluding done.
+  - Inbox tasks: `needs_review=true`, excluding done.
+  - Project summaries: deadline, open task count, next due task.
+  - Calendar data: project bars, task counts by date, project deadlines.
+  - Heatmap data: completion counts grouped by local date.
+  - Completed archive search: completed tasks filtered by text and project.
+- Add review semantics.
+  - `needs_review` is true when a task enters through Bulk Add.
+  - `needs_review` clears only when both `due_date` and `priority` are present.
+  - Inline date and priority updates should re-evaluate `needs_review`.
+- Add hard-delete semantics for individual tasks.
+  - Delete removes the task row.
+  - Completed history is preserved only for tasks not deleted.
+- Add Notion import under `src/importers/`.
+  - `src/importers/notionImport.js`: CLI import runner.
+  - `src/importers/notionClient.js`: Notion query wrapper.
+  - `src/importers/notionMapper.js`: maps Notion pages to local projects and tasks.
+  - Reuse existing property mapping ideas from `src/digestService.js`.
+  - Resolve Notion relation project names where possible.
+  - Create one project per unique Notion project name.
+  - Leave imported tasks projectless when Notion has no project.
+  - Map Notion priority values into High, Medium, Low.
+  - Map `p0` to High.
+  - Map `p1` and `p2` to Medium.
+  - Map `p3` and missing priority to Low.
+  - Map closed Notion tasks to `done`.
+  - Import completed tasks only if completed recently enough to fit the configured window.
+  - Store original Notion page id and URL on imported tasks.
+  - Do not import Google Calendar data.
+  - Do not post webhooks.
+- Remove or retire legacy files.
+  - Delete or replace `src/index.js` digest mode entrypoint.
+  - Delete or replace `src/formatter.js` if no longer useful.
+  - Split useful Notion mapping code out of `src/digestService.js`.
+  - Remove webhook delivery code.
+  - Remove calendar planning code.
+  - Remove digest scoring code from the main app path unless reused intentionally.
+- Update tests.
+  - Replace legacy digest tests with app/storage/import tests.
+  - Keep any Notion mapping tests that still apply after extraction.
+  - Add repository tests for task review, completion, deletion, and project summaries.
+  - Add calendar-data tests for project bar generation.
+  - Add analytics tests for heatmap grouping.
+  - Add import tests with representative Notion page fixtures.
+- Add development seed data.
+  - Small local seed command or fixture for manual UI testing.
+  - Include several projects, deadlines, inbox tasks, dated tasks, completed tasks, and easy tasks.
+
+## Implementation phases
+
+- Phase 1: App foundation.
+  - Add React + Vite client.
+  - Add local Node API server.
+  - Add SQLite connection and schema.
+  - Add manual project and task CRUD.
+  - Add sidebar shell.
+  - Result: a working local planner shell with persisted projects and tasks.
+- Phase 2: Core daily workflow.
+  - Add Today view.
+  - Add Bulk Add view.
+  - Add Inbox review behavior.
+  - Add inline due date, priority, done, and delete controls.
+  - Result: meeting follow-up todos can be captured quickly and reviewed.
+- Phase 3: Projects and easy tasks.
+  - Add project summary list.
+  - Add project deadline editing.
+  - Add inline project deadline editing in the Projects list.
+  - Add auto-assigned project colors.
+  - Add project color editing.
+  - Add Easy view and easy task persistence.
+  - Result: projects become the main organization layer.
+- Phase 4: Calendar timeline.
+  - Add current-month timeline view.
+  - Add project bars from earliest open task due date through project deadline.
+  - Add task counts and project deadline indicators.
+  - Add today Inbox count.
+  - Result: calendar shows project pressure without task-title clutter.
+- Phase 5: Analytics and history.
+  - Add completion heatmap.
+  - Add searchable completed task archive.
+  - Add completion grouping by local date.
+  - Result: completion history and activity patterns are visible.
+- Phase 6: Notion migration.
+  - Extract Notion mapping from legacy code.
+  - Add `npm run import:notion`.
+  - Import projects and tasks into SQLite.
+  - Preserve Notion id and URL metadata.
+  - Limit completed import to the recent window.
+  - Result: current Notion todos can be migrated into the planner.
+- Phase 7: Legacy cleanup.
+  - Remove digest, webhook, Google Calendar, and scheduling entrypoints.
+  - Update documentation.
+  - Remove obsolete tests.
+  - Result: the repo clearly represents the new planner app.
+
+## Testing strategy
+
+- Unit test date helpers.
+  - Overdue detection.
+  - Due-today detection.
+  - Local completion-date grouping.
+- Unit test task review rules.
+  - Bulk-added task starts with `needs_review=true`.
+  - Setting only due date keeps `needs_review=true`.
+  - Setting only priority keeps `needs_review=true`.
+  - Setting both due date and priority clears `needs_review`.
+- Unit test repositories with a temporary SQLite database.
+  - Project create/update/list.
+  - Task create/update/complete/delete.
+  - Easy task create/complete/delete.
+  - Completed task search.
+  - Heatmap aggregation.
+- Unit test project summaries.
+  - Open task count excludes done tasks.
+  - Next due task is selected correctly.
+  - Deadline is manual and not inferred.
+- Unit test calendar data generation.
+  - Project with no deadline has no bar.
+  - Project with deadline and open dated tasks has a bar.
+  - Bar start uses earliest open task due date.
+  - Bar end uses project deadline.
+  - Day counts include dated tasks.
+  - Today includes Inbox count.
+- Unit test Notion import mapping.
+  - Select and relation projects become local projects.
+  - Missing project remains projectless.
+  - Notion priority maps to High, Medium, or Low.
+  - `p0` maps to High.
+  - `p1` and `p2` map to Medium.
+  - `p3` and missing priority map to Low.
+  - Done tasks import as completed when inside the recent window.
+  - Old completed tasks are skipped.
+  - Notion id and URL are preserved.
+- Unit test easy-task analytics behavior.
+  - Completed easy tasks contribute to heatmap counts.
+- Add focused UI tests after the React views exist.
+  - Bulk Add creates tasks with Enter.
+  - Today Inbox clears after date and priority are set.
+  - Calendar shows task counts and project bars.
+  - Analytics search returns completed tasks.
+- Manually verify the local workflow.
+  - Start app locally.
+  - Render the app in a browser.
+  - Inspect desktop and narrow viewport layouts.
+  - Create project.
+  - Add bulk todos.
+  - Review todos.
+  - Complete tasks.
+  - Confirm heatmap updates.
+  - Confirm completed easy tasks appear in heatmap activity.
+  - Confirm calendar reflects project deadline and task counts.
+
+## Open questions
+
+- Which SQLite package should the implementation use after checking Node, Vite, and future Tauri constraints?
+- Should deleted tasks be recoverable later through an undo window, even though deletion is hard delete?
+- Should the app include a seed/reset command for development only?

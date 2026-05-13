@@ -2,15 +2,15 @@
   "name": "notion-digest",
   "version": "1.0.0",
   "private": true,
-  "description": "Flowkeeper-style Notion digest to Slack webhook",
-  "main": "src/index.js",
+  "description": "Private local planner backed by SQLite",
+  "main": "src/server/index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "digest": "node src/index.js",
-    "morning": "MODE=morning node src/index.js",
-    "midday": "MODE=midday node src/index.js",
-    "evening": "MODE=evening node src/index.js",
-    "dry-run": "DRY_RUN=1 MODE=morning node src/index.js",
+    "dev": "vite --host 127.0.0.1",
+    "dev:server": "node src/server/index.js",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "start": "node src/server/index.js",
+    "import:notion": "node src/importers/notionImport.js",
     "test": "node --test"
   },
   "engines": {
@@ -18,7 +18,10 @@
   },
   "dependencies": {
     "@notionhq/client": "^2.2.15",
+    "@vitejs/plugin-react": "^5.1.1",
     "dotenv": "^16.6.1",
-    "googleapis": "^128.0.0"
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "vite": "^7.2.6"
   }
 }
