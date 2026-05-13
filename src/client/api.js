@@ -26,9 +26,23 @@ export async function listProjectSummaries() {
   return body.projects;
 }
 
+export async function listCalendar(month) {
+  const suffix = month ? `?${new URLSearchParams({ month })}` : "";
+  const body = await request(`/calendar${suffix}`);
+  return body.calendar;
+}
+
 export async function createProject(input) {
   const body = await request("/projects", {
     method: "POST",
+    body: JSON.stringify(input),
+  });
+  return body.project;
+}
+
+export async function updateProject(id, input) {
+  const body = await request(`/projects/${id}`, {
+    method: "PATCH",
     body: JSON.stringify(input),
   });
   return body.project;
@@ -66,4 +80,38 @@ export async function completeTask(id) {
 
 export async function deleteTask(id) {
   await request(`/tasks/${id}`, { method: "DELETE" });
+}
+
+export async function listEasyTasks(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.done !== undefined) params.set("done", filters.done ? "true" : "false");
+  if (filters.projectId) params.set("projectId", filters.projectId);
+  const suffix = params.toString() ? `?${params}` : "";
+  const body = await request(`/easy-tasks${suffix}`);
+  return body.easyTasks;
+}
+
+export async function createEasyTask(input) {
+  const body = await request("/easy-tasks", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return body.easyTask;
+}
+
+export async function updateEasyTask(id, input) {
+  const body = await request(`/easy-tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  return body.easyTask;
+}
+
+export async function completeEasyTask(id) {
+  const body = await request(`/easy-tasks/${id}/complete`, { method: "PATCH" });
+  return body.easyTask;
+}
+
+export async function deleteEasyTask(id) {
+  await request(`/easy-tasks/${id}`, { method: "DELETE" });
 }

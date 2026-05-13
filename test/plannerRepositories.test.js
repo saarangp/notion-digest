@@ -7,6 +7,7 @@ const {
   listProjectSummaries,
   updateProject,
 } = require("../src/server/repositories/projectsRepository");
+const { listCalendarData } = require("../src/server/repositories/calendarRepository");
 const {
   completeTask,
   createTask,
@@ -14,6 +15,14 @@ const {
   getTask,
   updateTask,
 } = require("../src/server/repositories/tasksRepository");
+const {
+  completeEasyTask,
+  createEasyTask,
+  deleteEasyTask,
+  getEasyTask,
+  listEasyTasks,
+  updateEasyTask,
+} = require("../src/server/repositories/easyTasksRepository");
 
 function testDb() {
   const db = openDatabase(":memory:");
@@ -30,6 +39,9 @@ test("projects can be created, updated, and summarized", () => {
 
   const updated = updateProject(db, project.id, { deadlineDate: "2026-05-30" });
   assert.equal(updated.deadlineDate, "2026-05-30");
+
+  const recolored = updateProject(db, project.id, { color: "#123456" });
+  assert.equal(recolored.color, "#123456");
 
   createTask(db, {
     title: "Draft chapter",
@@ -108,4 +120,153 @@ test("task delete is a hard delete", () => {
 
   assert.equal(deleteTask(db, task.id), true);
   assert.equal(getTask(db, task.id), null);
+});
+
+test("easy tasks can be created, completed, reopened, and deleted", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Admin" });
+  const easyTask = createEasyTask(db, {
+    title: "Email receipt",
+    projectId: project.id,
+  });
+
+  assert.equal(easyTask.title, "Email receipt");
+  assert.equal(easyTask.projectId, project.id);
+  assert.equal(easyTask.projectName, "Admin");
+  assert.equal(easyTask.done, false);
+
+  const renamed = updateEasyTask(db, easyTask.id, {
+    title: "Email signed receipt",
+    projectId: null,
+  });
+  assert.equal(renamed.title, "Email signed receipt");
+  assert.equal(renamed.projectId, null);
+
+  const done = completeEasyTask(db, easyTask.id);
+  assert.equal(done.done, true);
+  assert.ok(done.completedAt);
+
+  const reopened = updateEasyTask(db, easyTask.id, { done: false });
+  assert.equal(reopened.done, false);
+  assert.equal(reopened.completedAt, null);
+
+  assert.equal(deleteEasyTask(db, easyTask.id), true);
+  assert.equal(getEasyTask(db, easyTask.id), null);
+});
+
+test("easy task listing supports open and completed filters", () => {
+  const db = testDb();
+  createEasyTask(db, { title: "Open easy" });
+  createEasyTask(db, { title: "Done easy", done: true });
+
+  const open = listEasyTasks(db, { done: false });
+  const done = listEasyTasks(db, { done: true });
+
+  assert.equal(open.length, 1);
+  assert.equal(open[0].title, "Open easy");
+  assert.equal(done.length, 1);
+  assert.equal(done[0].title, "Done easy");
+});
+
+test("calendar data creates project bars only for projects with deadlines", () => {
+  const db = testDb();
+  const withDeadline = createProject(db, { name: "Paper", deadlineDate: "2026-05-28" });
+  const withoutDeadline = createProject(db, { name: "Loose Admin" });
+
+  createTask(db, {
+    title: "Draft results",
+    projectId: withDeadline.id,
+    dueDate: "2026-05-14",
+    priority: "High",
+  });
+  createTask(db, {
+    title: "Book room",
+    projectId: withoutDeadline.id,
+    dueDate: "2026-05-16",
+    priority: "Low",
+  });
+
+  const calendar = listCalendarData(db, { month: "2026-05", today: "2026-05-13" });
+
+  assert.equal(calendar.projectBars.length, 1);
+  assert.equal(calendar.projectBars[0].project.id, withDeadline.id);
+  assert.equal(calendar.projectBars[0].startDate, "2026-05-14");
+  assert.equal(calendar.projectBars[0].endDate, "2026-05-28");
+});
+
+test("calendar project bars use earliest open dated task and ignore done tasks", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Chapter", deadlineDate: "2026-05-30" });
+
+  createTask(db, {
+    title: "Completed old item",
+    projectId: project.id,
+    dueDate: "2026-05-10",
+    priority: "Medium",
+    status: "done",
+  });
+  createTask(db, {
+    title: "Open later item",
+    projectId: project.id,
+    dueDate: "2026-05-18",
+    priority: "High",
+  });
+
+  const calendar = listCalendarData(db, { month: "2026-05", today: "2026-05-13" });
+
+  assert.equal(calendar.projectBars.length, 1);
+  assert.equal(calendar.projectBars[0].earliestDueDate, "2026-05-18");
+  assert.equal(calendar.projectBars[0].deadlineDate, "2026-05-30");
+});
+
+test("calendar counts dated open tasks but leaves undated inbox out of dated work", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Ops", deadlineDate: "2026-05-25" });
+
+  createTask(db, {
+    title: "Dated inbox",
+    projectId: project.id,
+    dueDate: "2026-05-13",
+    priority: "Medium",
+    needsReview: true,
+  });
+  createTask(db, {
+    title: "Reviewed dated",
+    dueDate: "2026-05-13",
+    priority: "Low",
+  });
+  createTask(db, {
+    title: "Undated inbox",
+    needsReview: true,
+  });
+  createTask(db, {
+    title: "Done dated",
+    dueDate: "2026-05-13",
+    priority: "High",
+    status: "done",
+  });
+
+  const calendar = listCalendarData(db, { month: "2026-05", today: "2026-05-13" });
+
+  assert.deepEqual(calendar.taskCounts, [{ date: "2026-05-13", count: 2 }]);
+  assert.deepEqual(calendar.todayInboxCount, { date: "2026-05-13", count: 2 });
+});
+
+test("calendar includes deadline markers without task titles", () => {
+  const db = testDb();
+  const project = createProject(db, { name: "Defense", deadlineDate: "2026-05-20" });
+
+  createTask(db, {
+    title: "Private task title",
+    projectId: project.id,
+    dueDate: "2026-05-18",
+    priority: "High",
+  });
+
+  const calendar = listCalendarData(db, { month: "2026-05", today: "2026-05-13" });
+
+  assert.equal(calendar.deadlines.length, 1);
+  assert.equal(calendar.deadlines[0].date, "2026-05-20");
+  assert.equal(calendar.deadlines[0].project.name, "Defense");
+  assert.equal(JSON.stringify(calendar).includes("Private task title"), false);
 });

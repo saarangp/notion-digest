@@ -1,5 +1,14 @@
 const { createProject, deleteProject, listProjectSummaries, listProjects, updateProject } = require("./repositories/projectsRepository");
+const { listCalendarData } = require("./repositories/calendarRepository");
 const { completeTask, createTask, deleteTask, listTasks, reopenTask, updateTask } = require("./repositories/tasksRepository");
+const {
+  completeEasyTask,
+  createEasyTask,
+  deleteEasyTask,
+  listEasyTasks,
+  reopenEasyTask,
+  updateEasyTask,
+} = require("./repositories/easyTasksRepository");
 
 async function readJson(req) {
   const chunks = [];
@@ -29,7 +38,7 @@ function notFound(res) {
 }
 
 function routePattern(pathname) {
-  const match = pathname.match(/^\/api\/(projects|tasks)\/([^/]+)(?:\/(complete|reopen))?$/);
+  const match = pathname.match(/^\/api\/(projects|tasks|easy-tasks)\/([^/]+)(?:\/(complete|reopen))?$/);
   if (!match) return null;
   return { resource: match[1], id: match[2], action: match[3] || null };
 }
@@ -53,8 +62,20 @@ async function handleApi(req, res, db) {
       return;
     }
 
+    if (url.pathname === "/api/calendar") {
+      sendJson(res, 200, {
+        calendar: listCalendarData(db, { month: url.searchParams.get("month") || undefined }),
+      });
+      return;
+    }
+
     if (url.pathname === "/api/tasks") {
       await handleTasks(req, res, db, url);
+      return;
+    }
+
+    if (url.pathname === "/api/easy-tasks") {
+      await handleEasyTasks(req, res, db, url);
       return;
     }
 
@@ -66,6 +87,11 @@ async function handleApi(req, res, db) {
 
     if (routed?.resource === "tasks") {
       await handleTask(req, res, db, routed.id, routed.action);
+      return;
+    }
+
+    if (routed?.resource === "easy-tasks") {
+      await handleEasyTask(req, res, db, routed.id, routed.action);
       return;
     }
 
@@ -144,6 +170,51 @@ async function handleTask(req, res, db, id, action) {
 
   if (req.method === "DELETE" && !action) {
     deleteTask(db, id) ? sendNoContent(res) : notFound(res);
+    return;
+  }
+
+  methodNotAllowed(res);
+}
+
+async function handleEasyTasks(req, res, db, url) {
+  if (req.method === "GET") {
+    const filters = {};
+    if (url.searchParams.get("done") !== null) filters.done = url.searchParams.get("done") === "true";
+    if (url.searchParams.get("projectId")) filters.projectId = url.searchParams.get("projectId");
+    sendJson(res, 200, { easyTasks: listEasyTasks(db, filters) });
+    return;
+  }
+
+  if (req.method === "POST") {
+    const input = await readJson(req);
+    sendJson(res, 201, { easyTask: createEasyTask(db, input) });
+    return;
+  }
+
+  methodNotAllowed(res);
+}
+
+async function handleEasyTask(req, res, db, id, action) {
+  if (req.method === "PATCH" && action === "complete") {
+    const easyTask = completeEasyTask(db, id);
+    easyTask ? sendJson(res, 200, { easyTask }) : notFound(res);
+    return;
+  }
+
+  if (req.method === "PATCH" && action === "reopen") {
+    const easyTask = reopenEasyTask(db, id);
+    easyTask ? sendJson(res, 200, { easyTask }) : notFound(res);
+    return;
+  }
+
+  if (req.method === "PATCH" && !action) {
+    const easyTask = updateEasyTask(db, id, await readJson(req));
+    easyTask ? sendJson(res, 200, { easyTask }) : notFound(res);
+    return;
+  }
+
+  if (req.method === "DELETE" && !action) {
+    deleteEasyTask(db, id) ? sendNoContent(res) : notFound(res);
     return;
   }
 

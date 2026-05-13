@@ -32,7 +32,23 @@ function mapTask(row) {
   };
 }
 
+function mapEasyTask(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    title: row.title,
+    projectId: row.project_id,
+    projectName: row.project_name,
+    projectColor: row.project_color,
+    done: Boolean(row.done),
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 module.exports = {
+  mapEasyTask,
   mapProject,
   mapTask,
 };

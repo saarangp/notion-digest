@@ -1,6 +1,6 @@
 import EmptyState from "../components/EmptyState.jsx";
 
-export default function ProjectsView({ projects, summaries, onCreateProject }) {
+export default function ProjectsView({ projects, summaries, onCreateProject, onProjectChange }) {
   async function handleSubmit(event) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -32,19 +32,40 @@ export default function ProjectsView({ projects, summaries, onCreateProject }) {
           <EmptyState>No projects yet.</EmptyState>
         ) : (
           rows.map((project) => (
-            <div className="project-row" key={project.id}>
-              <span className="project-dot" style={{ background: project.color }} />
-              <div className="project-main">
-                <div className="project-name">{project.name}</div>
-                <div className="project-sub">
-                  Deadline {project.deadlineDate || "unset"} · {project.openTaskCount || 0} open
-                </div>
-              </div>
-              <div className="project-next">{project.nextDueDate || "No dated tasks"}</div>
-            </div>
+            <ProjectRow key={project.id} project={project} onProjectChange={onProjectChange} />
           ))
         )}
       </section>
     </section>
+  );
+}
+
+function ProjectRow({ project, onProjectChange }) {
+  return (
+    <div className="project-row">
+      <label className="project-color-control" title="Project color">
+        <span className="project-dot" style={{ background: project.color }} />
+        <input
+          aria-label={`${project.name} color`}
+          type="color"
+          value={project.color}
+          onChange={(event) => onProjectChange(project, { color: event.currentTarget.value })}
+        />
+      </label>
+      <div className="project-main">
+        <div className="project-name">{project.name}</div>
+        <div className="project-sub">{project.openTaskCount || 0} open</div>
+      </div>
+      <label className="project-deadline-control">
+        <span>Deadline</span>
+        <input
+          aria-label={`${project.name} deadline`}
+          type="date"
+          value={project.deadlineDate || ""}
+          onChange={(event) => onProjectChange(project, { deadlineDate: event.currentTarget.value || null })}
+        />
+      </label>
+      <div className="project-next">{project.nextDueDate || "No dated tasks"}</div>
+    </div>
   );
 }

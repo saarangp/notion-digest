@@ -1,16 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "./components/Sidebar.jsx";
 import {
+  completeEasyTask,
   completeTask,
+  createEasyTask,
   createProject,
   createTask,
+  deleteEasyTask,
   deleteTask,
+  listCalendar,
+  listEasyTasks,
   listProjectSummaries,
   listProjects,
   listTasks,
+  updateEasyTask,
+  updateProject,
   updateTask,
 } from "./api.js";
 import BulkAddView from "./views/BulkAddView.jsx";
+import CalendarView from "./views/CalendarView.jsx";
+import EasyView from "./views/EasyView.jsx";
 import PlaceholderView from "./views/PlaceholderView.jsx";
 import ProjectsView from "./views/ProjectsView.jsx";
 import TasksView from "./views/TasksView.jsx";
@@ -21,6 +30,8 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [summaries, setSummaries] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [easyTasks, setEasyTasks] = useState([]);
+  const [calendar, setCalendar] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -28,19 +39,29 @@ export default function App() {
   }, []);
 
   async function refreshData() {
-    const [nextProjects, nextSummaries, nextTasks] = await Promise.all([
+    const [nextProjects, nextSummaries, nextTasks, nextEasyTasks, nextCalendar] = await Promise.all([
       listProjects(),
       listProjectSummaries(),
       listTasks(),
+      listEasyTasks(),
+      listCalendar(),
     ]);
     setProjects(nextProjects);
     setSummaries(nextSummaries);
     setTasks(nextTasks);
+    setEasyTasks(nextEasyTasks);
+    setCalendar(nextCalendar);
     setError("");
   }
 
   async function handleCreateProject(input) {
     await createProject(input);
+    await refreshData();
+  }
+
+  async function handleProjectChange(project, patch) {
+    setProjects((current) => current.map((item) => (item.id === project.id ? { ...item, ...patch } : item)));
+    await updateProject(project.id, patch);
     await refreshData();
   }
 
@@ -66,15 +87,39 @@ export default function App() {
     await refreshData();
   }
 
+  async function handleCreateEasyTask(input) {
+    const easyTask = await createEasyTask(input);
+    await refreshData();
+    return easyTask;
+  }
+
+  async function handleEasyTaskChange(easyTask, patch) {
+    setEasyTasks((current) => current.map((item) => (item.id === easyTask.id ? { ...item, ...patch } : item)));
+    await updateEasyTask(easyTask.id, patch);
+    await refreshData();
+  }
+
+  async function handleEasyTaskComplete(easyTask) {
+    await completeEasyTask(easyTask.id);
+    await refreshData();
+  }
+
+  async function handleEasyTaskDelete(easyTask) {
+    await deleteEasyTask(easyTask.id);
+    await refreshData();
+  }
+
   const view = useMemo(() => {
     if (activeView === "Today") {
       return (
         <TodayView
           projects={projects}
           tasks={tasks}
+          easyTasks={easyTasks}
           onTaskChange={handleTaskChange}
           onTaskComplete={handleTaskComplete}
           onTaskDelete={handleTaskDelete}
+          onEasyTaskComplete={handleEasyTaskComplete}
         />
       );
     }
@@ -88,6 +133,7 @@ export default function App() {
             projects={projects}
             summaries={summaries}
             onCreateProject={handleCreateProject}
+            onProjectChange={handleProjectChange}
           />
           <TasksView
             projects={projects}
@@ -100,8 +146,23 @@ export default function App() {
         </>
       );
     }
+    if (activeView === "Calendar") {
+      return <CalendarView calendar={calendar} />;
+    }
+    if (activeView === "Easy") {
+      return (
+        <EasyView
+          projects={projects}
+          easyTasks={easyTasks}
+          onCreateEasyTask={handleCreateEasyTask}
+          onEasyTaskChange={handleEasyTaskChange}
+          onEasyTaskComplete={handleEasyTaskComplete}
+          onEasyTaskDelete={handleEasyTaskDelete}
+        />
+      );
+    }
     return <PlaceholderView title={activeView} />;
-  }, [activeView, projects, summaries, tasks]);
+  }, [activeView, projects, summaries, tasks, easyTasks, calendar]);
 
   return (
     <div className="shell">

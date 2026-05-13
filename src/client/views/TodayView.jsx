@@ -1,10 +1,23 @@
 import EmptyState from "../components/EmptyState.jsx";
+import EasyTaskRow from "../components/EasyTaskRow.jsx";
 import TaskRow from "../components/TaskRow.jsx";
 import { isOverdue, todayIso } from "../dateUtils.js";
 
-export default function TodayView({ projects, tasks, onTaskChange, onTaskComplete, onTaskDelete }) {
+const EASY_PREVIEW_LIMIT = 3;
+
+export default function TodayView({
+  projects,
+  tasks,
+  easyTasks,
+  onTaskChange,
+  onTaskComplete,
+  onTaskDelete,
+  onEasyTaskComplete,
+}) {
   const today = todayIso();
   const openTasks = tasks.filter((task) => task.status === "todo");
+  const openEasyTasks = easyTasks.filter((task) => !task.done);
+  const easyPreview = openEasyTasks.slice(0, EASY_PREVIEW_LIMIT);
   const inbox = openTasks.filter((task) => task.needsReview);
   const reviewedTasks = openTasks.filter((task) => !task.needsReview);
   const overdue = reviewedTasks.filter((task) => isOverdue(task.dueDate));
@@ -31,6 +44,12 @@ export default function TodayView({ projects, tasks, onTaskChange, onTaskComplet
             onTaskComplete={onTaskComplete}
             onTaskDelete={onTaskDelete}
           />
+          <EasyPreviewSection
+            projects={projects}
+            tasks={easyPreview}
+            totalCount={openEasyTasks.length}
+            onEasyTaskComplete={onEasyTaskComplete}
+          />
         </div>
         <aside className="today-review">
           <TaskSection
@@ -55,6 +74,29 @@ function ViewHeader({ title, subtitle }) {
       <h2>{title}</h2>
       <p>{subtitle}</p>
     </header>
+  );
+}
+
+function EasyPreviewSection({ projects, tasks, totalCount, onEasyTaskComplete }) {
+  const title = totalCount > tasks.length ? `Easy (${tasks.length} of ${totalCount})` : "Easy";
+
+  return (
+    <section className="list-section">
+      <div className="section-label">{title}</div>
+      {tasks.length === 0 ? (
+        <EmptyState>No easy tasks.</EmptyState>
+      ) : (
+        tasks.map((task) => (
+          <EasyTaskRow
+            key={task.id}
+            task={task}
+            projects={projects}
+            compact
+            onComplete={onEasyTaskComplete}
+          />
+        ))
+      )}
+    </section>
   );
 }
 
