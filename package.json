@@ -1,5 +1,5 @@
 {
-  "name": "notion-digest",
+  "name": "local-planner",
   "version": "1.0.0",
   "private": true,
   "description": "Private local planner backed by SQLite",

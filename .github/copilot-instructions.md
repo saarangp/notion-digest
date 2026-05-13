@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-`notion-digest` is now a private local planner app. The main product is a React + Vite client talking to a local Node API backed by SQLite.
+`local-planner` is a private local planner app. The main product is a React + Vite client talking to a local Node API backed by SQLite.
 
-Notion is only a migration source. Digest delivery, Discord/Slack webhooks, Google Calendar scheduling, AI planning, and automatic rollover are removed from the active product path.
+Notion is only a migration source. External planning integrations, AI planning, and automatic rollover are outside the active product path.
 
 ## Architecture
 
@@ -33,7 +33,7 @@ The Vite dev server proxies `/api` to `http://127.0.0.1:4321`.
 - Keep functions small and direct.
 - Avoid unnecessary abstractions and nested functions unless they make ownership clearer.
 - Keep Notion mapping in importer-owned modules, not in the planner runtime.
-- Do not reintroduce webhook delivery, scheduler modes, Google Calendar automation, or digest scoring into the main app.
+- Keep runtime behavior local to the planner API, SQLite storage, React client, and importer-owned Notion migration code.
 
 ## Testing
 

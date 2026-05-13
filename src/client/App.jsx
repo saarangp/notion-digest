@@ -23,7 +23,6 @@ import BulkAddView from "./views/BulkAddView.jsx";
 import AnalyticsView from "./views/AnalyticsView.jsx";
 import CalendarView from "./views/CalendarView.jsx";
 import EasyView from "./views/EasyView.jsx";
-import PlaceholderView from "./views/PlaceholderView.jsx";
 import ProjectsView from "./views/ProjectsView.jsx";
 import TasksView from "./views/TasksView.jsx";
 import TodayView from "./views/TodayView.jsx";
@@ -188,7 +187,7 @@ export default function App() {
         />
       );
     }
-    return <PlaceholderView title={activeView} />;
+    return null;
   }, [activeView, projects, summaries, tasks, easyTasks, calendar, dataRevision]);
 
   return (

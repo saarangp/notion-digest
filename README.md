@@ -1,6 +1,6 @@
 # Local Planner
 
-Private local planner backed by SQLite. The app is replacing the old Notion digest automation with a local-first task and project workflow.
+Private local planner backed by SQLite. The app is a local-first task and project workflow with Notion retained only as an import source.
 
 ## Current Scope
 
@@ -11,8 +11,7 @@ Private local planner backed by SQLite. The app is replacing the old Notion dige
 - Manual task CRUD
 - Bulk task capture into review
 - Sidebar shell for Today, Bulk Add, Projects, Calendar, Analytics, and Easy
-
-Legacy digest, webhook delivery, Google Calendar scheduling, and automatic rollover are no longer part of the main product path. Notion is retained only as a migration source.
+- Notion import for one-time migration into SQLite
 
 ## Development
 
@@ -22,7 +21,7 @@ Install dependencies:
 npm install
 ```
 
-Run the local API:
+Run the local API server:
 
 ```bash
 npm run dev:server
@@ -41,6 +40,12 @@ http://127.0.0.1:5173
 ```
 
 The Vite dev server proxies `/api` to `http://127.0.0.1:4321`.
+
+Build the client:
+
+```bash
+npm run build
+```
 
 ## Database
 
@@ -62,7 +67,7 @@ PLANNER_DB_PATH=/path/to/planner.sqlite npm run dev:server
 npm test
 ```
 
-The current focused tests cover SQLite schema/repository behavior for projects and tasks, including review clearing, completion, deletion, and summaries.
+The focused tests cover SQLite repositories, planner date helpers, project/task behavior, analytics, calendar data, and Notion import mapping.
 
 ## Notion Import
 
